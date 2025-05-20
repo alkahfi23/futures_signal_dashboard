@@ -1,3 +1,4 @@
+# --- import dan konfigurasi dasar ---
 import os
 import streamlit as st
 import pandas as pd
@@ -10,15 +11,18 @@ from ta.volatility import BollingerBands
 from twilio.rest import Client
 from streamlit_autorefresh import st_autorefresh
 
-# === Ambil konfigurasi dari Environment Variables ===
+# === Konstanta dan Variabel Global ===
 ACCOUNT_SID = os.getenv("TWILIO_SID")
 AUTH_TOKEN = os.getenv("TWILIO_TOKEN")
-FROM = "whatsapp:+14155238886"  # Twilio Sandbox default
-TO = os.getenv("WHATSAPP_TO")  # Nomor tujuan dari env var
+FROM = "whatsapp:+14155238886"
+TO = os.getenv("WHATSAPP_TO")
 
 BASE_URL = "https://api.binance.com"
 SYMBOLS = ["BTCUSDT", "ETHUSDT"]
 INTERVALS = ["1m", "15m"]
+PRIMARY_INTERVAL = "1m"
+CONFIRMATION_INTERVAL = "15m"
+
 LIMIT = 100
 REFRESH_INTERVAL = 60
 TRAILING_STOP_PERCENT = 0.01
@@ -28,6 +32,7 @@ SL_DYNAMIC_MULTIPLIER = 1.0
 last_signals = {}
 positions = {}
 
+# === Fungsi-fungsi utama ===
 @st.cache_data(ttl=55)
 def get_klines(symbol, interval="1m", limit=100):
     url = f"{BASE_URL}/api/v3/klines?symbol={symbol}&interval={interval}&limit={limit}"
@@ -35,10 +40,11 @@ def get_klines(symbol, interval="1m", limit=100):
         res = requests.get(url)
         data = res.json()
         df = pd.DataFrame(data, columns=[
-            'open_time','open','high','low','close','volume',
-            'close_time','qav','num_trades','taker_base_vol','taker_quote_vol','ignore'])
+            'open_time', 'open', 'high', 'low', 'close', 'volume',
+            'close_time', 'qav', 'num_trades', 'taker_base_vol', 'taker_quote_vol', 'ignore'])
         df['open_time'] = pd.to_datetime(df['open_time'], unit='ms')
-        df[['open', 'high', 'low', 'close', 'volume']] = df[['open', 'high', 'low', 'close', 'volume']].astype(float)
+        cols = ['open', 'high', 'low', 'close', 'volume']
+        df[cols] = df[cols].apply(pd.to_numeric, errors='coerce')
         return df
     except Exception as e:
         st.error(f"[ERROR] Gagal ambil data {symbol} ({interval}): {e}")
@@ -46,7 +52,7 @@ def get_klines(symbol, interval="1m", limit=100):
 
 def send_whatsapp_message(message):
     if not (ACCOUNT_SID and AUTH_TOKEN and TO):
-        st.warning("⚠️ Twilio credentials or WhatsApp recipient not set in environment variables.")
+        st.warning("⚠️ Twilio credentials atau nomor WhatsApp belum diset.")
         return
     try:
         client = Client(ACCOUNT_SID, AUTH_TOKEN)
@@ -74,8 +80,7 @@ def generate_signal(df):
         return "LONG"
     elif latest['rsi'] > 70 and latest['macd'] < latest['macd_signal'] and latest['close'] > latest['bb_upper']:
         return "SHORT"
-    else:
-        return ""
+    return ""
 
 def calculate_dynamic_tp_sl(df, signal):
     atr = df['high'].rolling(window=14).max() - df['low'].rolling(window=14).min()
@@ -86,103 +91,99 @@ def calculate_dynamic_tp_sl(df, signal):
 
 def check_trailing_stop(symbol, price, signal, rsi, df, interval):
     symbol_interval = f"{symbol}_{interval}"
-    if symbol_interval not in positions:
-        if signal in ["LONG", "SHORT"]:
-            tp_value, sl_value = calculate_dynamic_tp_sl(df, signal)
-            positions[symbol_interval] = {
-                "entry": price, "highest": price, "lowest": price, "signal": signal,
-                "tp": price + tp_value if signal == "LONG" else price - tp_value,
-                "sl": price - sl_value if signal == "LONG" else price + sl_value
-            }
-            return
-    else:
-        pos = positions[symbol_interval]
-        if signal != pos['signal']:
-            tp_value, sl_value = calculate_dynamic_tp_sl(df, signal)
-            positions[symbol_interval] = {
-                "entry": price, "highest": price, "lowest": price, "signal": signal,
-                "tp": price + tp_value if signal == "LONG" else price - tp_value,
-                "sl": price - sl_value if signal == "LONG" else price + sl_value
-            }
-            return
+    tp_value, sl_value = calculate_dynamic_tp_sl(df, signal)
 
-        if signal == "LONG":
-            positions[symbol_interval]['highest'] = max(pos['highest'], price)
-            if price < pos['highest'] * (1 - TRAILING_STOP_PERCENT):
-                send_whatsapp_message(f"🔔 Trailing Stop Triggered for {symbol} LONG at {price:.2f}")
-                del positions[symbol_interval]
-                return
-            if price >= pos['tp'] or price <= pos['sl'] or rsi >= 70:
-                send_whatsapp_message(f"🚪 EXIT LONG {symbol} @ {price:.2f} (RSI: {rsi:.2f})")
-                del positions[symbol_interval]
-                return
-        elif signal == "SHORT":
-            positions[symbol_interval]['lowest'] = min(pos['lowest'], price)
-            if price > pos['lowest'] * (1 + TRAILING_STOP_PERCENT):
-                send_whatsapp_message(f"🔔 Trailing Stop Triggered for {symbol} SHORT at {price:.2f}")
-                del positions[symbol_interval]
-                return
-            if price <= pos['tp'] or price >= pos['sl'] or rsi <= 30:
-                send_whatsapp_message(f"🚪 EXIT SHORT {symbol} @ {price:.2f} (RSI: {rsi:.2f})")
-                del positions[symbol_interval]
-                return
+    if symbol_interval not in positions or signal != positions[symbol_interval]['signal']:
+        positions[symbol_interval] = {
+            "entry": price,
+            "highest": price,
+            "lowest": price,
+            "signal": signal,
+            "tp": price + tp_value if signal == "LONG" else price - tp_value,
+            "sl": price - sl_value if signal == "LONG" else price + sl_value
+        }
+        return
 
-# --- Streamlit UI ---
+    pos = positions[symbol_interval]
+    if signal == "LONG":
+        pos['highest'] = max(pos['highest'], price)
+        if price < pos['highest'] * (1 - TRAILING_STOP_PERCENT) or price <= pos['sl'] or rsi >= 70:
+            send_whatsapp_message(f"🚪 EXIT LONG {symbol} @ {price:.2f}")
+            del positions[symbol_interval]
+    elif signal == "SHORT":
+        pos['lowest'] = min(pos['lowest'], price)
+        if price > pos['lowest'] * (1 + TRAILING_STOP_PERCENT) or price >= pos['sl'] or rsi <= 30:
+            send_whatsapp_message(f"🚪 EXIT SHORT {symbol} @ {price:.2f}")
+            del positions[symbol_interval]
+
+def confirm_with_higher_tf(primary_signal, confirmation_signal):
+    return primary_signal == confirmation_signal and primary_signal != ""
+
+# === Streamlit UI ===
 st.set_page_config(page_title="Futures Signal Dashboard", layout="wide")
 st_autorefresh(interval=REFRESH_INTERVAL * 1000, key="datarefresh")
-
 st.title("🚀 Futures Signal Dashboard")
 
 for symbol in SYMBOLS:
+    data = {}
     for interval in INTERVALS:
         df = get_klines(symbol, interval)
         if df.empty or df.shape[0] < 20:
             continue
         df = calculate_indicators(df)
         signal = generate_signal(df)
-        latest_price = df['close'].iloc[-1]
+        data[interval] = {"df": df, "signal": signal}
 
-        col1, col2 = st.columns([1, 3])
-        with col1:
-            st.metric(label=f"{symbol} ({interval})", value=latest_price, delta=signal)
-            # Tampilkan posisi aktif
-            symbol_interval = f"{symbol}_{interval}"
-            pos = positions.get(symbol_interval)
-            if pos:
-                st.write(f"**Posisi Aktif:** {pos['signal']} | Entry: {pos['entry']:.2f} | TP: {pos['tp']:.2f} | SL: {pos['sl']:.2f}")
+    if PRIMARY_INTERVAL not in data or CONFIRMATION_INTERVAL not in data:
+        continue
 
-        with col2:
-            fig = go.Figure()
-            fig.add_trace(go.Candlestick(
-                x=df['open_time'],
-                open=df['open'], high=df['high'], low=df['low'], close=df['close'],
-                name="Candles"
-            ))
-            fig.add_trace(go.Scatter(x=df['open_time'], y=df['bb_upper'], line=dict(color='gray'), name='BB Upper'))
-            fig.add_trace(go.Scatter(x=df['open_time'], y=df['bb_lower'], line=dict(color='gray'), name='BB Lower'))
-            fig.update_layout(title=f"{symbol} - {interval} Chart", xaxis_title="Time", yaxis_title="Price")
-            st.plotly_chart(fig, use_container_width=True)
+    primary_df = data[PRIMARY_INTERVAL]['df']
+    confirmation_signal = data[CONFIRMATION_INTERVAL]['signal']
+    signal = data[PRIMARY_INTERVAL]['signal']
+    confirmed = confirm_with_higher_tf(signal, confirmation_signal)
 
-        if signal:
-            signal_key = f"{symbol}_{interval}"
-            last_signal = last_signals.get(signal_key)
-            if last_signal != signal:
-                check_trailing_stop(symbol, latest_price, signal, df['rsi'].iloc[-1], df, interval)
-                tp, sl = calculate_dynamic_tp_sl(df, signal)
+    latest_price = primary_df['close'].iloc[-1]
+    col1, col2 = st.columns([1, 3])
 
-                tp_price = latest_price + tp if signal == "LONG" else latest_price - tp
-                sl_price = latest_price - sl if signal == "LONG" else latest_price + sl
+    with col1:
+        st.metric(label=f"{symbol} ({PRIMARY_INTERVAL})", value=latest_price, delta=signal)
+        symbol_key = f"{symbol}_{PRIMARY_INTERVAL}"
+        pos = positions.get(symbol_key)
+        if pos:
+            st.write(f"**Posisi Aktif:** {pos['signal']} | Entry: {pos['entry']:.2f} | TP: {pos['tp']:.2f} | SL: {pos['sl']:.2f}")
 
-                msg = (
-                    f"📢 Signal {signal} untuk {symbol} ({interval})\n"
-                    f"💰 Entry: {latest_price:.2f}\n"
-                    f"🎯 Take Profit: {tp_price:.2f}\n"
-                    f"🛡 Stop Loss: {sl_price:.2f}"
-                )
+    with col2:
+        fig = go.Figure()
+        fig.add_trace(go.Candlestick(
+            x=primary_df['open_time'],
+            open=primary_df['open'], high=primary_df['high'],
+            low=primary_df['low'], close=primary_df['close'],
+            name="Candles"))
+        fig.add_trace(go.Scatter(x=primary_df['open_time'], y=primary_df['bb_upper'], line=dict(color='gray'), name='BB Upper'))
+        fig.add_trace(go.Scatter(x=primary_df['open_time'], y=primary_df['bb_lower'], line=dict(color='gray'), name='BB Lower'))
+        fig.update_layout(title=f"{symbol} - {PRIMARY_INTERVAL} Chart", xaxis_title="Time", yaxis_title="Price")
+        st.plotly_chart(fig, use_container_width=True)
 
-                st.success(msg)
-                send_whatsapp_message(msg)
+    # Proses sinyal hanya jika dikonfirmasi
+    if confirmed:
+        last_signal = last_signals.get(symbol_key)
+        check_trailing_stop(symbol, latest_price, signal, primary_df['rsi'].iloc[-1], primary_df, PRIMARY_INTERVAL)
 
-                last_signals[signal_key] = signal
-            else:
-                st.info(f"ℹ️ Signal {signal} untuk {symbol} ({interval}) sudah dikirim, dilewati.")
+        if last_signal != signal:
+            tp, sl = calculate_dynamic_tp_sl(primary_df, signal)
+            tp_price = latest_price + tp if signal == "LONG" else latest_price - tp
+            sl_price = latest_price - sl if signal == "LONG" else latest_price + sl
+
+            msg = (
+                f"📢 Multi-Timeframe Confirmed Signal {signal} untuk {symbol} ({PRIMARY_INTERVAL})\n"
+                f"💰 Entry: {latest_price:.2f}\n"
+                f"🎯 Take Profit: {tp_price:.2f}\n"
+                f"🛡 Stop Loss: {sl_price:.2f}"
+            )
+            st.success(msg)
+            send_whatsapp_message(msg)
+            last_signals[symbol_key] = signal
+        else:
+            st.info(f"ℹ️ Sinyal {signal} untuk {symbol} ({PRIMARY_INTERVAL}) sudah dikirim.")
+    else:
+        st.warning(f"❌ Belum ada konfirmasi dari {CONFIRMATION_INTERVAL} untuk sinyal {signal} pada {symbol}")
