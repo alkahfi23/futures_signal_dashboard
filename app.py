@@ -5,17 +5,19 @@ import time
 from datetime import datetime
 import ta
 import plotly.graph_objects as go
+import os
 from ta.trend import EMAIndicator, ADXIndicator, MACD
 from ta.momentum import RSIIndicator
 from ta.volatility import BollingerBands
 from twilio.rest import Client
 from streamlit_autorefresh import st_autorefresh
 
+
 # === Twilio Config ===
-ACCOUNT_SID = "AC0d1b106170256db0f31f5bc786eecf2a"  # Ganti dengan milikmu
-AUTH_TOKEN = "632c048b2fc923ab21c6cf74a5f460da"
-FROM = "whatsapp:+14155238886"  # Twilio Sandbox
-TO = "whatsapp:+6285838734169"  # Nomor tujuan
+ACCOUNT_SID = os.getenv("TWILIO_SID")
+AUTH_TOKEN = os.getenv("TWILIO_TOKEN")
+FROM = "whatsapp:+14155238886"
+TO = os.getenv("WHATSAPP_TO")
 
 # === Konstanta ===
 BASE_URL = "https://api.binance.com"
