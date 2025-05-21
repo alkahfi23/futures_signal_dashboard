@@ -22,7 +22,7 @@ BASE_URL = "https://api.binance.com"
 SYMBOLS = ["BTCUSDT", "ETHUSDT"]
 INTERVALS = ["1m"]
 LIMIT = 100
-REFRESH_INTERVAL = 60
+REFRESH_INTERVAL = 55
 TRAILING_STOP_PERCENT = 0.01
 
 last_signals = {}
