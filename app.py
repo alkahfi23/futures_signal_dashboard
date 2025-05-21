@@ -101,7 +101,7 @@ def enhanced_generate_signal(df):
         latest['close'] < latest['bb_lower'] * 1.01 and
         latest['close'] > latest['ema'] * 0.98 and
         latest['adx'] > 15 and
-        vol_spike and
+        vol_spike or
         strong_candle
     )
 
@@ -111,7 +111,7 @@ def enhanced_generate_signal(df):
         latest['close'] > latest['bb_upper'] * 0.99 and
         latest['close'] < latest['ema'] * 1.02 and
         latest['adx'] > 15 and
-        vol_spike and
+        vol_spike or
         strong_candle
     )
 
