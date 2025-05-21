@@ -120,6 +120,25 @@ def enhanced_generate_signal(df):
     elif short_cond:
         return "SHORT"
     return ""
+def load_last_signal(filepath="last_signal.txt"):
+    try:
+        with open(filepath, "r") as f:
+            return f.read().strip()
+    except FileNotFoundError:
+        return ""
+
+def save_last_signal(signal, filepath="last_signal.txt"):
+    with open(filepath, "w") as f:
+        f.write(signal)
+
+def send_whatsapp_notification_if_new(signal):
+    last_signal = load_last_signal()
+    if signal != last_signal:
+        send_whatsapp(signal)  # Fungsi kirim WA kamu
+        save_last_signal(signal)
+    else:
+        print("Sinyal sama, tidak dikirim ke WhatsApp.")
+
 # === Streamlit UI ===
 st.set_page_config(page_title="Futures Signal Dashboard", layout="wide")
 st_autorefresh(interval=REFRESH_INTERVAL * 1000, key="datarefresh")
