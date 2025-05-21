@@ -92,23 +92,30 @@ def enhanced_generate_signal(df):
              f"ADX: {latest['adx']:.2f}, BB Upper: {latest['bb_upper']:.2f}, BB Lower: {latest['bb_lower']:.2f}, "
              f"Vol Spike: {vol_spike}, Strong Candle: {strong_candle}")
 
-    long_cond = (
-        latest['rsi'] < 40 and
+    # ==== Sinyal LONG ====
+long_cond = (
+    (
+        latest['rsi'] < 50 and  # Lebih fleksibel, tidak menunggu terlalu oversold
         latest['macd'] > latest['macd_signal'] and
-        latest['close'] < latest['bb_lower'] * 1.01 and
-        latest['close'] > latest['ema'] * 0.98 and
-        latest['adx'] > 15 and
-        (vol_spike or strong_candle)
+        latest['close'] > latest['ema'] * 0.98 and  # Konfirmasi arah naik
+        latest['adx'] > 15
+    ) and (
+        vol_spike or strong_candle
     )
+)
 
-    short_cond = (
-        latest['rsi'] > 60 and
+# ==== Sinyal SHORT ====
+short_cond = (
+    (
+        latest['rsi'] > 50 and
         latest['macd'] < latest['macd_signal'] and
-        latest['close'] > latest['bb_upper'] * 0.99 and
         latest['close'] < latest['ema'] * 1.02 and
-        latest['adx'] > 15 and
-        (vol_spike or strong_candle)
+        latest['adx'] > 15
+    ) and (
+        vol_spike or strong_candle
     )
+)
+
 
     if long_cond:
         return "LONG"
