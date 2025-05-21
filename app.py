@@ -125,76 +125,73 @@ for symbol in SYMBOLS:
             col1, col2 = st.columns([1, 3])
             with col1:
                 st.metric(label=f"{symbol} ({interval})", value=latest_price, delta=signal)
+            with col2:
+            from plotly.subplots import make_subplots
 
-           with col2:
-    from plotly.subplots import make_subplots
+            fig = make_subplots(
+                rows=3, cols=1,
+                shared_xaxes=True,
+                row_heights=[0.5, 0.25, 0.25],
+                vertical_spacing=0.02,
+                subplot_titles=("Price with Bollinger Bands & EMA", "RSI", "MACD")
+            )
 
-    fig = make_subplots(
-        rows=3, cols=1,
-        shared_xaxes=True,
-        row_heights=[0.5, 0.25, 0.25],
-        vertical_spacing=0.02,
-        subplot_titles=("Price with Bollinger Bands & EMA", "RSI", "MACD")
-    )
+            # Candlestick + Bollinger Bands + EMA
+            fig.add_trace(go.Candlestick(
+                x=df['open_time'], open=df['open'], high=df['high'],
+                low=df['low'], close=df['close'], name="Candles"
+            ), row=1, col=1)
 
-    # Candlestick + Bollinger Bands + EMA
-    fig.add_trace(go.Candlestick(
-        x=df['open_time'], open=df['open'], high=df['high'],
-        low=df['low'], close=df['close'], name="Candles"
-    ), row=1, col=1)
+            fig.add_trace(go.Scatter(
+                x=df['open_time'], y=df['bb_upper'], line=dict(color='gray', dash='dot'), name='BB Upper'
+            ), row=1, col=1)
 
-    fig.add_trace(go.Scatter(
-        x=df['open_time'], y=df['bb_upper'], line=dict(color='gray', dash='dot'), name='BB Upper'
-    ), row=1, col=1)
+            fig.add_trace(go.Scatter(
+                x=df['open_time'], y=df['bb_lower'], line=dict(color='gray', dash='dot'), name='BB Lower'
+            ), row=1, col=1)
 
-    fig.add_trace(go.Scatter(
-        x=df['open_time'], y=df['bb_lower'], line=dict(color='gray', dash='dot'), name='BB Lower'
-    ), row=1, col=1)
+            fig.add_trace(go.Scatter(
+                x=df['open_time'], y=df['ema'], line=dict(color='orange'), name='EMA20'
+            ), row=1, col=1)
 
-    fig.add_trace(go.Scatter(
-        x=df['open_time'], y=df['ema'], line=dict(color='orange'), name='EMA20'
-    ), row=1, col=1)
+            # RSI plot
+            fig.add_trace(go.Scatter(
+                x=df['open_time'], y=df['rsi'], name='RSI', line=dict(color='purple')
+            ), row=2, col=1)
 
-    # RSI plot
-    fig.add_trace(go.Scatter(
-        x=df['open_time'], y=df['rsi'], name='RSI', line=dict(color='purple')
-    ), row=2, col=1)
+            fig.add_hline(y=70, line=dict(dash='dot', color='red'), row=2, col=1)
+            fig.add_hline(y=30, line=dict(dash='dot', color='green'), row=2, col=1)
 
-    fig.add_hline(y=70, line=dict(dash='dot', color='red'), row=2, col=1)
-    fig.add_hline(y=30, line=dict(dash='dot', color='green'), row=2, col=1)
+            # MACD plot
+            fig.add_trace(go.Scatter(
+                x=df['open_time'], y=df['macd'], name='MACD', line=dict(color='blue')
+            ), row=3, col=1)
 
-    # MACD plot
-    fig.add_trace(go.Scatter(
-        x=df['open_time'], y=df['macd'], name='MACD', line=dict(color='blue')
-    ), row=3, col=1)
+            fig.add_trace(go.Scatter(
+                x=df['open_time'], y=df['macd_signal'], name='Signal Line', line=dict(color='red')
+            ), row=3, col=1)
 
-    fig.add_trace(go.Scatter(
-        x=df['open_time'], y=df['macd_signal'], name='Signal Line', line=dict(color='red')
-    ), row=3, col=1)
+            fig.add_trace(go.Bar(
+                x=df['open_time'], y=(df['macd'] - df['macd_signal']), name='MACD Histogram',
+                marker_color=['green' if v > 0 else 'red' for v in (df['macd'] - df['macd_signal'])]
+            ), row=3, col=1)
 
-    fig.add_trace(go.Bar(
-        x=df['open_time'], y=(df['macd'] - df['macd_signal']), name='MACD Histogram',
-        marker_color=['green' if v > 0 else 'red' for v in (df['macd'] - df['macd_signal'])]
-    ), row=3, col=1)
-
-    fig.update_layout(
-        height=800,
-        title=f"{symbol} - {interval} Signals & Indicators",
-        xaxis=dict(rangeslider=dict(visible=False)),
-        showlegend=False
-    )
-    
-    st.plotly_chart(fig, use_container_width=True)
-
-
+            fig.update_layout(
+                height=800,
+                title=f"{symbol} - {interval} Signals & Indicators",
+                xaxis=dict(rangeslider=dict(visible=False)),
+                showlegend=False
+            )
+            
+            st.plotly_chart(fig, use_container_width=True)
             # Only trigger new signal when direction changes
-            if signal and last_signal != signal:
+    if signal and last_signal != signal:
                 msg = f"📢 Signal {signal} untuk {symbol} ({interval})"
                 st.success(msg)
                 send_whatsapp_message(msg)
                 last_signals[signal_key] = signal
 
             # Maintain signal until opposite signal appears
-            elif not signal and last_signal:
+    elif not signal and last_signal:
                 signal = last_signal
                 st.info(f"ℹ️ Menunggu sinyal berlawanan untuk {symbol} ({interval})")
