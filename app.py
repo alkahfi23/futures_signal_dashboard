@@ -11,6 +11,8 @@ from ta.momentum import RSIIndicator
 from ta.volatility import BollingerBands
 from twilio.rest import Client
 from streamlit_autorefresh import st_autorefresh
+from ta.volatility import AverageTrueRange
+
 
 # === Configuration ===
 ACCOUNT_SID = os.getenv("TWILIO_SID")
@@ -65,6 +67,9 @@ def calculate_indicators(df):
     df['bb_lower'] = bb.bollinger_lband()
     df['volume_ma20'] = df['volume'].rolling(window=20).mean()
     df['volume_spike'] = df['volume'] > df['volume_ma20'] * 2
+    atr = AverageTrueRange(df['high'], df['low'], df['close'], window=14)
+    df['atr'] = atr.average_true_range()
+
     return df
 
 def is_volume_spike(df):
@@ -113,11 +118,14 @@ def enhanced_generate_signal(df):
         vol_spike and
         latest['adx'] > 15
     )
-
     if long_cond:
-        return "LONG"
+        tp = latest['close'] + latest['atr'] * 2.5
+        sl = latest['close'] - latest['atr'] * 1.5
+        return f"LONG | TP: {tp:.2f} | SL: {sl:.2f}"
     elif short_cond:
-        return "SHORT"
+        tp = latest['close'] - latest['atr'] * 2.5
+        sl = latest['close'] + latest['atr'] * 1.5
+        return f"SHORT | TP: {tp:.2f} | SL: {sl:.2f}"
     return ""
 
 
