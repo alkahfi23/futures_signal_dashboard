@@ -66,6 +66,9 @@ def calculate_indicators(df):
     bb = BollingerBands(df['close'], window=20, window_dev=2)
     df['bb_upper'] = bb.bollinger_hband()
     df['bb_lower'] = bb.bollinger_lband()
+    df['volume_ma20'] = df['volume'].rolling(window=20).mean()
+    df['volume_spike'] = df['volume'] > df['volume_ma20'] * 2
+
     return df
 
 def enhanced_generate_signal(df):
