@@ -69,24 +69,32 @@ def calculate_indicators(df):
 
 def enhanced_generate_signal(df):
     latest = df.iloc[-1]
-    if pd.isna(latest['ema']) or pd.isna(latest['rsi']):
+
+    # Cek jika indikator belum lengkap
+    if pd.isna(latest['ema']) or pd.isna(latest['rsi']) or pd.isna(latest['macd']) or pd.isna(latest['macd_signal']):
         return ""
 
+    # Debug log untuk bantu analisa
+    st.write(f"[DEBUG] Harga: {latest['close']:.2f}, EMA: {latest['ema']:.2f}, RSI: {latest['rsi']:.2f}, "
+             f"MACD: {latest['macd']:.4f}, MACD Signal: {latest['macd_signal']:.4f}, "
+             f"ADX: {latest['adx']:.2f}, BB Upper: {latest['bb_upper']:.2f}, BB Lower: {latest['bb_lower']:.2f}")
+
+    # Sinyal LONG dengan kriteria lebih fleksibel
     long_cond = (
-        latest['rsi'] < 30 and
+        latest['rsi'] < 40 and  # dulunya < 30
         latest['macd'] > latest['macd_signal'] and
-        latest['close'] < latest['bb_lower'] and
-        latest['close'] > latest['ema'] and
-        latest['adx'] > 20 and
-        latest['macd'] < 0
+        latest['close'] < latest['bb_lower'] * 1.01 and
+        latest['close'] > latest['ema'] * 0.98 and
+        latest['adx'] > 15  # dulunya > 20
     )
+
+    # Sinyal SHORT dengan kriteria lebih fleksibel
     short_cond = (
-        latest['rsi'] > 70 and
+        latest['rsi'] > 60 and  # dulunya > 70
         latest['macd'] < latest['macd_signal'] and
-        latest['close'] > latest['bb_upper'] and
-        latest['close'] < latest['ema'] and
-        latest['adx'] > 20 and
-        latest['macd'] > 0
+        latest['close'] > latest['bb_upper'] * 0.99 and
+        latest['close'] < latest['ema'] * 1.02 and
+        latest['adx'] > 15
     )
 
     if long_cond:
@@ -94,6 +102,7 @@ def enhanced_generate_signal(df):
     elif short_cond:
         return "SHORT"
     return ""
+
 
 # --- Streamlit UI ---
 st.set_page_config(page_title="Futures Signal Dashboard", layout="wide")
@@ -117,19 +126,66 @@ for symbol in SYMBOLS:
             with col1:
                 st.metric(label=f"{symbol} ({interval})", value=latest_price, delta=signal)
 
-            with col2:
-                fig = go.Figure()
-                fig.add_trace(go.Candlestick(
-                    x=df['open_time'], open=df['open'], high=df['high'],
-                    low=df['low'], close=df['close'], name="Candles"
-                ))
-                fig.add_trace(go.Scatter(x=df['open_time'], y=df['bb_upper'], line=dict(color='gray'), name='BB Upper'))
-                fig.add_trace(go.Scatter(x=df['open_time'], y=df['bb_lower'], line=dict(color='gray'), name='BB Lower'))
-                fig.update_layout(title=f"{symbol} - {interval} Chart", xaxis_title="Time", yaxis_title="Price")
-                st.plotly_chart(fig, use_container_width=True)
+           with col2:
+    from plotly.subplots import make_subplots
 
-            signal_key = f"{symbol}_{interval}"
-            last_signal = last_signals.get(signal_key)
+    fig = make_subplots(
+        rows=3, cols=1,
+        shared_xaxes=True,
+        row_heights=[0.5, 0.25, 0.25],
+        vertical_spacing=0.02,
+        subplot_titles=("Price with Bollinger Bands & EMA", "RSI", "MACD")
+    )
+
+    # Candlestick + Bollinger Bands + EMA
+    fig.add_trace(go.Candlestick(
+        x=df['open_time'], open=df['open'], high=df['high'],
+        low=df['low'], close=df['close'], name="Candles"
+    ), row=1, col=1)
+
+    fig.add_trace(go.Scatter(
+        x=df['open_time'], y=df['bb_upper'], line=dict(color='gray', dash='dot'), name='BB Upper'
+    ), row=1, col=1)
+
+    fig.add_trace(go.Scatter(
+        x=df['open_time'], y=df['bb_lower'], line=dict(color='gray', dash='dot'), name='BB Lower'
+    ), row=1, col=1)
+
+    fig.add_trace(go.Scatter(
+        x=df['open_time'], y=df['ema'], line=dict(color='orange'), name='EMA20'
+    ), row=1, col=1)
+
+    # RSI plot
+    fig.add_trace(go.Scatter(
+        x=df['open_time'], y=df['rsi'], name='RSI', line=dict(color='purple')
+    ), row=2, col=1)
+
+    fig.add_hline(y=70, line=dict(dash='dot', color='red'), row=2, col=1)
+    fig.add_hline(y=30, line=dict(dash='dot', color='green'), row=2, col=1)
+
+    # MACD plot
+    fig.add_trace(go.Scatter(
+        x=df['open_time'], y=df['macd'], name='MACD', line=dict(color='blue')
+    ), row=3, col=1)
+
+    fig.add_trace(go.Scatter(
+        x=df['open_time'], y=df['macd_signal'], name='Signal Line', line=dict(color='red')
+    ), row=3, col=1)
+
+    fig.add_trace(go.Bar(
+        x=df['open_time'], y=(df['macd'] - df['macd_signal']), name='MACD Histogram',
+        marker_color=['green' if v > 0 else 'red' for v in (df['macd'] - df['macd_signal'])]
+    ), row=3, col=1)
+
+    fig.update_layout(
+        height=800,
+        title=f"{symbol} - {interval} Signals & Indicators",
+        xaxis=dict(rangeslider=dict(visible=False)),
+        showlegend=False
+    )
+    
+    st.plotly_chart(fig, use_container_width=True)
+
 
             # Only trigger new signal when direction changes
             if signal and last_signal != signal:
