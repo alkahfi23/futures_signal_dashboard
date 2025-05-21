@@ -128,38 +128,6 @@ def enhanced_generate_signal(df):
         return f"SHORT | TP: {tp:.2f} | SL: {sl:.2f}"
     return ""
 
-
-    # ==== Sinyal LONG ====
-long_cond = (
-    (
-        latest['rsi'] < 50 and  # Lebih fleksibel, tidak menunggu terlalu oversold
-        latest['macd'] > latest['macd_signal'] and
-        latest['close'] > latest['ema'] * 0.98 and  # Konfirmasi arah naik
-        latest['adx'] > 15
-    ) and (
-        vol_spike or strong_candle
-    )
-)
-
-# ==== Sinyal SHORT ====
-short_cond = (
-    (
-        latest['rsi'] > 50 and
-        latest['macd'] < latest['macd_signal'] and
-        latest['close'] < latest['ema'] * 1.02 and
-        latest['adx'] > 15
-    ) and (
-        vol_spike or strong_candle
-    )
-)
-
-
-    if long_cond:
-        return "LONG"
-    elif short_cond:
-        return "SHORT"
-    return ""
-
 # === Persistent Signal Check ===
 def load_last_signal(symbol, interval):
     path = f"last_signal_{symbol}_{interval}.txt"
@@ -175,7 +143,7 @@ def save_last_signal(symbol, interval, signal):
         f.write(signal)
 
 # === Streamlit UI ===
-st.set_page_config(page_title="Futures Signal Dashboard", layout="wide")
+st.set_page_config(page_title="Fuures Signal Dashboard", layout="wide")
 st_autorefresh(interval=REFRESH_INTERVAL * 1000, key="datarefresh")
 
 st.title("🚀 Futures Signal Dashboard")
