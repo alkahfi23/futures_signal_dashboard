@@ -87,10 +87,39 @@ def enhanced_generate_signal(df):
     vol_spike = is_volume_spike(df)
     strong_candle = is_strong_trend_candle(df)
 
+    price_above_bb_upper = latest['close'] > latest['bb_upper'] * 1.005
+    price_below_bb_lower = latest['close'] < latest['bb_lower'] * 0.995
+    early_macd_cross_up = (df['macd'].iloc[-2] < df['macd_signal'].iloc[-2]) and (latest['macd'] > latest['macd_signal'])
+    early_macd_cross_down = (df['macd'].iloc[-2] > df['macd_signal'].iloc[-2]) and (latest['macd'] < latest['macd_signal'])
+
     st.write(f"[DEBUG] Harga: {latest['close']:.2f}, EMA: {latest['ema']:.2f}, RSI: {latest['rsi']:.2f}, "
              f"MACD: {latest['macd']:.4f}, MACD Signal: {latest['macd_signal']:.4f}, "
              f"ADX: {latest['adx']:.2f}, BB Upper: {latest['bb_upper']:.2f}, BB Lower: {latest['bb_lower']:.2f}, "
-             f"Vol Spike: {vol_spike}, Strong Candle: {strong_candle}")
+             f"Vol Spike: {vol_spike}, Strong Candle: {strong_candle}, "
+             f"MACD Early Up: {early_macd_cross_up}, MACD Early Down: {early_macd_cross_down}")
+
+    long_cond = (
+        (early_macd_cross_up or price_above_bb_upper or strong_candle) and
+        latest['rsi'] > 45 and
+        latest['close'] > latest['ema'] * 1.005 and
+        vol_spike and
+        latest['adx'] > 15
+    )
+
+    short_cond = (
+        (early_macd_cross_down or price_below_bb_lower or strong_candle) and
+        latest['rsi'] < 55 and
+        latest['close'] < latest['ema'] * 0.995 and
+        vol_spike and
+        latest['adx'] > 15
+    )
+
+    if long_cond:
+        return "LONG"
+    elif short_cond:
+        return "SHORT"
+    return ""
+
 
     # ==== Sinyal LONG ====
 long_cond = (
