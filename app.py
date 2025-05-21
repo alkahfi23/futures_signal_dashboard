@@ -19,16 +19,13 @@ TO = os.getenv("WHATSAPP_TO")
 
 BASE_URL = "https://api.binance.com"
 SYMBOLS = ["BTCUSDT", "ETHUSDT"]
-INTERVALS = ["1m", "15m"]
+INTERVALS = ["1m", "5m"]
 LIMIT = 100
 REFRESH_INTERVAL = 60
 TRAILING_STOP_PERCENT = 0.01
-TP_DYNAMIC_MULTIPLIER = 1.5
-SL_DYNAMIC_MULTIPLIER = 1.0
 
 last_signals = {}
 positions = {}
-multi_tf_signals = {}
 
 @st.cache_data(ttl=55)
 def get_klines(symbol, interval="1m", limit=100):
@@ -98,34 +95,6 @@ def enhanced_generate_signal(df):
         return "SHORT"
     return ""
 
-def calculate_dynamic_tp_sl(df):
-    atr = df['high'].rolling(window=14).max() - df['low'].rolling(window=14).min()
-    latest_atr = atr.iloc[-1]
-    return latest_atr * TP_DYNAMIC_MULTIPLIER, latest_atr * SL_DYNAMIC_MULTIPLIER
-
-def check_trailing_stop(symbol, price, signal, rsi, df, interval):
-    symbol_interval = f"{symbol}_{interval}"
-    if symbol_interval not in positions or positions[symbol_interval]['signal'] != signal:
-        tp_value, sl_value = calculate_dynamic_tp_sl(df)
-        positions[symbol_interval] = {
-            "entry": price, "highest": price, "lowest": price, "signal": signal,
-            "tp": price + tp_value if signal == "LONG" else price - tp_value,
-            "sl": price - sl_value if signal == "LONG" else price + sl_value
-        }
-        return
-
-    pos = positions[symbol_interval]
-    if signal == "LONG":
-        positions[symbol_interval]['highest'] = max(pos['highest'], price)
-        if price < pos['highest'] * (1 - TRAILING_STOP_PERCENT) or price >= pos['tp'] or price <= pos['sl'] or rsi >= 70:
-            send_whatsapp_message(f"🚪 EXIT LONG {symbol} @ {price:.2f} (RSI: {rsi:.2f})")
-            del positions[symbol_interval]
-    elif signal == "SHORT":
-        positions[symbol_interval]['lowest'] = min(pos['lowest'], price)
-        if price > pos['lowest'] * (1 + TRAILING_STOP_PERCENT) or price <= pos['tp'] or price >= pos['sl'] or rsi <= 30:
-            send_whatsapp_message(f"🚪 EXIT SHORT {symbol} @ {price:.2f} (RSI: {rsi:.2f})")
-            del positions[symbol_interval]
-
 # --- Streamlit UI ---
 st.set_page_config(page_title="Futures Signal Dashboard", layout="wide")
 st_autorefresh(interval=REFRESH_INTERVAL * 1000, key="datarefresh")
@@ -133,26 +102,20 @@ st_autorefresh(interval=REFRESH_INTERVAL * 1000, key="datarefresh")
 st.title("🚀 Futures Signal Dashboard")
 
 for symbol in SYMBOLS:
-    symbol_signals = {}
+    last_tf_signal = ""
     for interval in INTERVALS:
         df = get_klines(symbol, interval)
         if df.empty or df.shape[0] < 20:
             continue
         df = calculate_indicators(df)
         signal = enhanced_generate_signal(df)
-        symbol_signals[interval] = signal
 
         if interval == "1m":
             latest_price = df['close'].iloc[-1]
-            higher_tf_signal = symbol_signals.get("15m", "")
 
             col1, col2 = st.columns([1, 3])
             with col1:
                 st.metric(label=f"{symbol} ({interval})", value=latest_price, delta=signal)
-                symbol_interval = f"{symbol}_{interval}"
-                pos = positions.get(symbol_interval)
-                if pos:
-                    st.write(f"**Posisi Aktif:** {pos['signal']} | Entry: {pos['entry']:.2f} | TP: {pos['tp']:.2f} | SL: {pos['sl']:.2f}")
 
             with col2:
                 fig = go.Figure()
@@ -165,23 +128,17 @@ for symbol in SYMBOLS:
                 fig.update_layout(title=f"{symbol} - {interval} Chart", xaxis_title="Time", yaxis_title="Price")
                 st.plotly_chart(fig, use_container_width=True)
 
-            if signal and (higher_tf_signal == signal or higher_tf_signal == ""):
-                signal_key = f"{symbol}_{interval}"
-                last_signal = last_signals.get(signal_key)
-                if last_signal != signal:
-                    check_trailing_stop(symbol, latest_price, signal, df['rsi'].iloc[-1], df, interval)
-                    tp, sl = calculate_dynamic_tp_sl(df)
-                    tp_price = latest_price + tp if signal == "LONG" else latest_price - tp
-                    sl_price = latest_price - sl if signal == "LONG" else latest_price + sl
-                    msg = (
-                        f"📢 Signal {signal} untuk {symbol} ({interval})\n"
-                        f"💰 Entry: {latest_price:.2f}\n"
-                        f"🎯 Take Profit: {tp_price:.2f}\n"
-                        f"🛡 Stop Loss: {sl_price:.2f}"
-                    )
-                    st.success(msg)
-                    send_whatsapp_message(msg)
-                    last_signals[signal_key] = signal
-                else:
-                    st.info(f"ℹ️ Signal {signal} untuk {symbol} ({interval}) sudah dikirim, dilewati.")
-    multi_tf_signals[symbol] = symbol_signals
+            signal_key = f"{symbol}_{interval}"
+            last_signal = last_signals.get(signal_key)
+
+            # Only trigger new signal when direction changes
+            if signal and last_signal != signal:
+                msg = f"📢 Signal {signal} untuk {symbol} ({interval})"
+                st.success(msg)
+                send_whatsapp_message(msg)
+                last_signals[signal_key] = signal
+
+            # Maintain signal until opposite signal appears
+            elif not signal and last_signal:
+                signal = last_signal
+                st.info(f"ℹ️ Menunggu sinyal berlawanan untuk {symbol} ({interval})")
