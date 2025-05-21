@@ -20,7 +20,7 @@ TO = os.getenv("WHATSAPP_TO")
 
 BASE_URL = "https://api.binance.com"
 SYMBOLS = ["BTCUSDT", "ETHUSDT"]
-INTERVALS = ["1m", "5m"]
+INTERVALS = ["1m"]
 LIMIT = 100
 REFRESH_INTERVAL = 60
 TRAILING_STOP_PERCENT = 0.01
@@ -74,16 +74,22 @@ def enhanced_generate_signal(df):
     if pd.isna(latest['ema']) or pd.isna(latest['rsi']) or pd.isna(latest['macd']) or pd.isna(latest['macd_signal']):
         return ""
 
+    vol_spike = is_volume_spike(df)
+    strong_candle = is_strong_trend_candle(df)
+
     st.write(f"[DEBUG] Harga: {latest['close']:.2f}, EMA: {latest['ema']:.2f}, RSI: {latest['rsi']:.2f}, "
              f"MACD: {latest['macd']:.4f}, MACD Signal: {latest['macd_signal']:.4f}, "
-             f"ADX: {latest['adx']:.2f}, BB Upper: {latest['bb_upper']:.2f}, BB Lower: {latest['bb_lower']:.2f}")
+             f"ADX: {latest['adx']:.2f}, BB Upper: {latest['bb_upper']:.2f}, BB Lower: {latest['bb_lower']:.2f}, "
+             f"Vol Spike: {vol_spike}, Strong Candle: {strong_candle}")
 
     long_cond = (
         latest['rsi'] < 40 and
         latest['macd'] > latest['macd_signal'] and
         latest['close'] < latest['bb_lower'] * 1.01 and
         latest['close'] > latest['ema'] * 0.98 and
-        latest['adx'] > 15
+        latest['adx'] > 15 and
+        vol_spike and
+        strong_candle
     )
 
     short_cond = (
@@ -91,7 +97,9 @@ def enhanced_generate_signal(df):
         latest['macd'] < latest['macd_signal'] and
         latest['close'] > latest['bb_upper'] * 0.99 and
         latest['close'] < latest['ema'] * 1.02 and
-        latest['adx'] > 15
+        latest['adx'] > 15 and
+        vol_spike and
+        strong_candle
     )
 
     if long_cond:
@@ -99,7 +107,6 @@ def enhanced_generate_signal(df):
     elif short_cond:
         return "SHORT"
     return ""
-
 # === Streamlit UI ===
 st.set_page_config(page_title="Futures Signal Dashboard", layout="wide")
 st_autorefresh(interval=REFRESH_INTERVAL * 1000, key="datarefresh")
