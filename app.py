@@ -68,8 +68,18 @@ def calculate_indicators(df):
     df['bb_lower'] = bb.bollinger_lband()
     df['volume_ma20'] = df['volume'].rolling(window=20).mean()
     df['volume_spike'] = df['volume'] > df['volume_ma20'] * 2
-
     return df
+
+def is_volume_spike(df):
+    latest = df.iloc[-1]
+    volume_avg = df['volume'].rolling(window=20).mean().iloc[-1]
+    return latest['volume'] > 2 * volume_avg
+
+def is_strong_trend_candle(df):
+    latest = df.iloc[-1]
+    body_size = abs(latest['close'] - latest['open'])
+    candle_range = latest['high'] - latest['low']
+    return body_size > 0.6 * candle_range
 
 def enhanced_generate_signal(df):
     latest = df.iloc[-1]
