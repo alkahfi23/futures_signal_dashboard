@@ -1,4 +1,4 @@
-# Refactored and Enhanced Futures Signal Dashboard
+# === Refactored and Enhanced Futures Signal Dashboard ===
 import os
 import streamlit as st
 import pandas as pd
@@ -24,9 +24,6 @@ INTERVALS = ["1m"]
 LIMIT = 100
 REFRESH_INTERVAL = 55
 TRAILING_STOP_PERCENT = 0.01
-
-last_signals = {}
-positions = {}
 
 @st.cache_data(ttl=55)
 def get_klines(symbol, interval="1m", limit=100):
@@ -101,8 +98,7 @@ def enhanced_generate_signal(df):
         latest['close'] < latest['bb_lower'] * 1.01 and
         latest['close'] > latest['ema'] * 0.98 and
         latest['adx'] > 15 and
-        vol_spike or
-        strong_candle
+        (vol_spike or strong_candle)
     )
 
     short_cond = (
@@ -111,8 +107,7 @@ def enhanced_generate_signal(df):
         latest['close'] > latest['bb_upper'] * 0.99 and
         latest['close'] < latest['ema'] * 1.02 and
         latest['adx'] > 15 and
-        vol_spike or
-        strong_candle
+        (vol_spike or strong_candle)
     )
 
     if long_cond:
@@ -120,24 +115,20 @@ def enhanced_generate_signal(df):
     elif short_cond:
         return "SHORT"
     return ""
-def load_last_signal(filepath="last_signal.txt"):
+
+# === Persistent Signal Check ===
+def load_last_signal(symbol, interval):
+    path = f"last_signal_{symbol}_{interval}.txt"
     try:
-        with open(filepath, "r") as f:
+        with open(path, "r") as f:
             return f.read().strip()
     except FileNotFoundError:
         return ""
 
-def save_last_signal(signal, filepath="last_signal.txt"):
-    with open(filepath, "w") as f:
+def save_last_signal(symbol, interval, signal):
+    path = f"last_signal_{symbol}_{interval}.txt"
+    with open(path, "w") as f:
         f.write(signal)
-
-def send_whatsapp_notification_if_new(signal):
-    last_signal = load_last_signal()
-    if signal != last_signal:
-        send_whatsapp(signal)  # Fungsi kirim WA kamu
-        save_last_signal(signal)
-    else:
-        print("Sinyal sama, tidak dikirim ke WhatsApp.")
 
 # === Streamlit UI ===
 st.set_page_config(page_title="Futures Signal Dashboard", layout="wide")
@@ -216,13 +207,14 @@ for symbol in SYMBOLS:
                 st.plotly_chart(fig, use_container_width=True)
 
             # === Signal Handling ===
-            signal_key = f"{symbol}_{interval}"
-            last_signal = last_signals.get(signal_key)
+            last_signal = load_last_signal(symbol, interval)
 
             if signal and signal != last_signal:
                 msg = f"📢 Signal {signal} untuk {symbol} ({interval})"
                 st.success(msg)
                 send_whatsapp_message(msg)
-                last_signals[signal_key] = signal
-            elif not signal and last_signal:
-                st.info(f"ℹ️ Menunggu sinyal berlawanan untuk {symbol} ({interval})")
+                save_last_signal(symbol, interval, signal)
+            elif not signal:
+                st.info(f"ℹ️ Menunggu sinyal untuk {symbol} ({interval})")
+            else:
+                st.info(f"✅ Tidak ada perubahan sinyal {symbol} ({interval}): {signal}")
