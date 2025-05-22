@@ -1,4 +1,5 @@
-# === Refactored and Enhanced Futures Signal Dashboard ===
+# === Futures Signal Dashboard (Refactored for 1-Minute Only) ===
+
 import os
 import streamlit as st
 import pandas as pd
@@ -21,12 +22,15 @@ TO = os.getenv("WHATSAPP_TO")
 
 BASE_URL = "https://api.binance.com"
 SYMBOLS = ["BTCUSDT", "ETHUSDT"]
-INTERVALS = ["1m"]
+INTERVAL = "1m"
 LIMIT = 100
 REFRESH_INTERVAL = 55
-TRAILING_STOP_PERCENT = 0.01
 
-# === Functions ===
+# === Risk Settings ===
+account_balance = 20  # Ubah sesuai akun
+risk_pct = 50
+leverage = 10
+
 @st.cache_data(ttl=55)
 def get_klines(symbol, interval="1m", limit=100):
     url = f"{BASE_URL}/api/v3/klines?symbol={symbol}&interval={interval}&limit={limit}"
@@ -67,7 +71,8 @@ def calculate_indicators(df):
     df['bb_lower'] = bb.bollinger_lband()
     df['volume_ma20'] = df['volume'].rolling(window=20).mean()
     df['volume_spike'] = df['volume'] > df['volume_ma20'] * 2
-    df['atr'] = AverageTrueRange(df['high'], df['low'], df['close'], window=14).average_true_range()
+    atr = AverageTrueRange(df['high'], df['low'], df['close'], window=14)
+    df['atr'] = atr.average_true_range()
     return df
 
 def is_volume_spike(df):
@@ -84,11 +89,9 @@ def is_strong_trend_candle(df):
 def enhanced_generate_signal(df):
     latest = df.iloc[-1]
     if pd.isna(latest['ema']) or pd.isna(latest['rsi']) or pd.isna(latest['macd']) or pd.isna(latest['macd_signal']):
-        return "", latest
-
+        return ""
     vol_spike = is_volume_spike(df)
     strong_candle = is_strong_trend_candle(df)
-
     price_above_bb_upper = latest['close'] > latest['bb_upper'] * 1.005
     price_below_bb_lower = latest['close'] < latest['bb_lower'] * 0.995
     early_macd_cross_up = (df['macd'].iloc[-2] < df['macd_signal'].iloc[-2]) and (latest['macd'] > latest['macd_signal'])
@@ -101,6 +104,7 @@ def enhanced_generate_signal(df):
         vol_spike and
         latest['adx'] > 15
     )
+
     short_cond = (
         (early_macd_cross_down or price_below_bb_lower or strong_candle) and
         latest['rsi'] < 55 and
@@ -110,11 +114,10 @@ def enhanced_generate_signal(df):
     )
 
     if long_cond:
-        return "LONG", latest
+        return "LONG"
     elif short_cond:
-        return "SHORT", latest
-    else:
-        return "", latest
+        return "SHORT"
+    return ""
 
 def load_last_signal(symbol, interval):
     path = f"last_signal_{symbol}_{interval}.txt"
@@ -129,72 +132,77 @@ def save_last_signal(symbol, interval, signal):
     with open(path, "w") as f:
         f.write(signal)
 
-# === Streamlit UI ===
-st.set_page_config(page_title="Futures Signal Dashboard", layout="wide")
-st_autorefresh(interval=REFRESH_INTERVAL * 1000, key="datarefresh")
+def render_chart(df, symbol, interval, signal):
+    fig = make_subplots(rows=3, cols=1, shared_xaxes=True,
+                        row_heights=[0.5, 0.25, 0.25], vertical_spacing=0.02,
+                        subplot_titles=("Price with Bollinger Bands & EMA", "RSI", "MACD"))
 
-st.title("🚀 Futures Signal Dashboard")
-account_balance = 20  # 💰 Set your actual balance
-risk_pct = 50
-leverage = 10
+    fig.add_trace(go.Candlestick(
+        x=df['open_time'], open=df['open'], high=df['high'],
+        low=df['low'], close=df['close'], name="Candles"
+    ), row=1, col=1)
+
+    fig.add_trace(go.Scatter(x=df['open_time'], y=df['bb_upper'], line=dict(color='gray', dash='dot'), name='BB Upper'), row=1, col=1)
+    fig.add_trace(go.Scatter(x=df['open_time'], y=df['bb_lower'], line=dict(color='gray', dash='dot'), name='BB Lower'), row=1, col=1)
+    fig.add_trace(go.Scatter(x=df['open_time'], y=df['ema'], line=dict(color='orange'), name='EMA20'), row=1, col=1)
+
+    fig.add_trace(go.Scatter(x=df['open_time'], y=df['rsi'], name='RSI', line=dict(color='purple')), row=2, col=1)
+    fig.add_hline(y=70, line=dict(dash='dot', color='red'), row=2, col=1)
+    fig.add_hline(y=30, line=dict(dash='dot', color='green'), row=2, col=1)
+
+    fig.add_trace(go.Scatter(x=df['open_time'], y=df['macd'], name='MACD', line=dict(color='blue')), row=3, col=1)
+    fig.add_trace(go.Scatter(x=df['open_time'], y=df['macd_signal'], name='Signal Line', line=dict(color='red')), row=3, col=1)
+    fig.add_trace(go.Bar(x=df['open_time'], y=(df['macd'] - df['macd_signal']),
+                         name='MACD Histogram',
+                         marker_color=['green' if v > 0 else 'red' for v in (df['macd'] - df['macd_signal'])]), row=3, col=1)
+
+    fig.update_layout(height=800, title=f"{symbol} - {interval} Signals & Indicators",
+                      xaxis=dict(rangeslider=dict(visible=False)), showlegend=False)
+    st.plotly_chart(fig, use_container_width=True)
+
+# === Streamlit App ===
+st.set_page_config(page_title="Futures Signal Dashboard", layout="wide")
+st_autorefresh(interval=REFRESH_INTERVAL * 1000, key="refresh")
+
+st.title("🚀 Futures Signal Dashboard - 1m Only")
 
 for symbol in SYMBOLS:
-    for interval in INTERVALS:
-        df = get_klines(symbol, interval)
-        if df.empty or df.shape[0] < 20:
-            continue
-        df = calculate_indicators(df)
-        signal, latest = enhanced_generate_signal(df)
-        entry = latest['close']
+    df = get_klines(symbol, INTERVAL)
+    if df.empty or df.shape[0] < 20:
+        continue
 
-        # === Chart Section ===
-        col1, col2 = st.columns([1, 3])
-        with col1:
-            st.metric(label=f"{symbol} ({interval})", value=entry, delta=signal)
+    df = calculate_indicators(df)
+    signal = enhanced_generate_signal(df)
 
-        with col2:
-            fig = make_subplots(rows=3, cols=1, shared_xaxes=True, row_heights=[0.5, 0.25, 0.25], vertical_spacing=0.02)
-            fig.add_trace(go.Candlestick(x=df['open_time'], open=df['open'], high=df['high'],
-                                         low=df['low'], close=df['close'], name="Candles"), row=1, col=1)
-            fig.add_trace(go.Scatter(x=df['open_time'], y=df['bb_upper'], line=dict(color='gray', dash='dot'), name='BB Upper'), row=1, col=1)
-            fig.add_trace(go.Scatter(x=df['open_time'], y=df['bb_lower'], line=dict(color='gray', dash='dot'), name='BB Lower'), row=1, col=1)
-            fig.add_trace(go.Scatter(x=df['open_time'], y=df['ema'], line=dict(color='orange'), name='EMA20'), row=1, col=1)
-            fig.add_trace(go.Scatter(x=df['open_time'], y=df['rsi'], name='RSI', line=dict(color='purple')), row=2, col=1)
-            fig.add_hline(y=70, line=dict(dash='dot', color='red'), row=2, col=1)
-            fig.add_hline(y=30, line=dict(dash='dot', color='green'), row=2, col=1)
-            fig.add_trace(go.Scatter(x=df['open_time'], y=df['macd'], name='MACD', line=dict(color='blue')), row=3, col=1)
-            fig.add_trace(go.Scatter(x=df['open_time'], y=df['macd_signal'], name='Signal Line', line=dict(color='red')), row=3, col=1)
-            fig.add_trace(go.Bar(x=df['open_time'], y=(df['macd'] - df['macd_signal']),
-                                 name='MACD Histogram',
-                                 marker_color=['green' if v > 0 else 'red' for v in (df['macd'] - df['macd_signal'])]), row=3, col=1)
-            fig.update_layout(height=800, title=f"{symbol} - {interval} Signals & Indicators", xaxis=dict(rangeslider=dict(visible=False)), showlegend=False)
-            st.plotly_chart(fig, use_container_width=True)
+    latest = df.iloc[-1]
+    entry = latest['close']
 
-        # === Signal Change Handling & Risk Management ===
-        last_signal = load_last_signal(symbol, interval)
+    if signal:
+        # Risk Management
+        sl = tp = direction = None
+        if signal == "LONG":
+            sl = entry - latest['atr'] * 1.5
+            tp = entry + latest['atr'] * 2.5
+        elif signal == "SHORT":
+            sl = entry + latest['atr'] * 1.5
+            tp = entry - latest['atr'] * 2.5
 
-        if signal and signal != last_signal:
-            st.success(f"📢 New Signal: {signal} on {symbol} ({interval})")
-            send_whatsapp_message(f"📢 Signal {signal} untuk {symbol} ({interval})")
-            save_last_signal(symbol, interval, signal)
-
-            atr = latest['atr']
-            if signal == "LONG":
-                sl = entry - atr * 1.5
-                tp = entry + atr * 2.5
-                direction = "long"
-            elif signal == "SHORT":
-                sl = entry + atr * 1.5
-                tp = entry - atr * 2.5
-                direction = "short"
-
+        if sl and tp:
             pos_size = calculate_position_size(account_balance, risk_pct, entry, sl, leverage)
             rrr = calculate_risk_reward(entry, sl, tp)
             is_margin_risk, margin_note = margin_call_warning(account_balance, pos_size, entry, leverage)
-            risk_msg = format_risk_message(symbol, interval, entry, sl, tp, pos_size, rrr, margin_note)
+            risk_msg = format_risk_message(symbol, INTERVAL, entry, sl, tp, pos_size, rrr, margin_note)
             send_whatsapp_message(risk_msg)
 
-        elif not signal:
-            st.info(f"ℹ️ Menunggu sinyal untuk {symbol} ({interval})")
+        last_signal = load_last_signal(symbol, INTERVAL)
+        if signal != last_signal:
+            msg = f"📢 Signal {signal} untuk {symbol} ({INTERVAL})"
+            st.success(msg)
+            send_whatsapp_message(msg)
+            save_last_signal(symbol, INTERVAL, signal)
         else:
-            st.info(f"✅ Tidak ada perubahan sinyal {symbol} ({interval}): {signal}")
+            st.info(f"✅ Tidak ada perubahan sinyal {symbol} ({INTERVAL}): {signal}")
+    else:
+        st.info(f"⏳ Menunggu sinyal {symbol} ({INTERVAL})")
+
+    render_chart(df, symbol, INTERVAL, signal)
