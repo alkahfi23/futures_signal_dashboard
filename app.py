@@ -73,54 +73,48 @@ def calculate_indicators(df):
     df['atr'] = atr.average_true_range()
     return df
 
-def enhanced_generate_signal(df, debug=False):
+def enhanced_signal(df):
     latest = df.iloc[-1]
-    if pd.isna(latest['ema']) or pd.isna(latest['rsi']) or pd.isna(latest['macd']) or pd.isna(latest['macd_signal']):
-        return ""
+    prev = df.iloc[-2]
 
-    vol_spike = latest['volume'] > latest['volume_ma20'] * 1.2  # Lebih longgar
-    strong_candle = abs(latest['close'] - latest['open']) > 0.3 * (latest['high'] - latest['low'])
+    macd_cross_up = prev["macd"] < prev["macd_signal"] and latest["macd"] > latest["macd_signal"]
+    macd_cross_down = prev["macd"] > prev["macd_signal"] and latest["macd"] < latest["macd_signal"]
 
-    early_macd_up = df['macd'].iloc[-2] < df['macd_signal'].iloc[-2] and latest['macd'] > latest['macd_signal']
-    early_macd_down = df['macd'].iloc[-2] > df['macd_signal'].iloc[-2] and latest['macd'] < latest['macd_signal']
+    ema_up = latest["close"] > latest["ema"]
+    ema_down = latest["close"] < latest["ema"]
 
-    above_bb = latest['close'] > latest['bb_upper'] * 1.001
-    below_bb = latest['close'] < latest['bb_lower'] * 0.999
+    rsi_bullish = latest["rsi"] > 48
+    rsi_bearish = latest["rsi"] < 52
 
-    bb_width = latest['bb_upper'] - latest['bb_lower']
-    avg_range = df['high'].iloc[-20:].mean() - df['low'].iloc[-20:].mean()
-    bb_squeeze = bb_width < avg_range * 0.3  # Longgarkan
+    bb_upper_break = latest["close"] > latest["bb_upper"]
+    bb_lower_break = latest["close"] < latest["bb_lower"]
 
-    if bb_squeeze:
-        return ""
+    adx_strong = latest["adx"] > 15
+    vol_spike = latest["volume_spike"]
 
-    long_cond = (
-        (early_macd_up or above_bb or strong_candle)
-        and latest['rsi'] > 45
-        and latest['close'] > latest['ema'] * 1.001
-        and vol_spike
-        and latest['adx'] > 8
-    )
-    short_cond = (
-        (early_macd_down or below_bb or strong_candle)
-        and latest['rsi'] < 55
-        and latest['close'] < latest['ema'] * 0.999
-        and vol_spike
-        and latest['adx'] > 8
-    )
+    score_long = sum([
+        macd_cross_up,
+        ema_up,
+        rsi_bullish,
+        bb_upper_break,
+        vol_spike,
+        adx_strong
+    ])
 
-    if debug:
-        print(f"LONG: {long_cond}, SHORT: {short_cond}")
-        print(f"MACD: {latest['macd']:.4f}, Signal: {latest['macd_signal']:.4f}, RSI: {latest['rsi']:.2f}")
-        print(f"Vol: {latest['volume']}, Vol MA: {latest['volume_ma20']}")
-        print(f"ADX: {latest['adx']:.2f}, BB Squeeze: {bb_squeeze}")
+    score_short = sum([
+        macd_cross_down,
+        ema_down,
+        rsi_bearish,
+        bb_lower_break,
+        vol_spike,
+        adx_strong
+    ])
 
-    if long_cond:
+    if score_long >= 3:
         return "LONG"
-    elif short_cond:
+    elif score_short >= 3:
         return "SHORT"
-    else:
-        return ""
+    return ""
 
 def load_last_signal(symbol, interval):
     try:
