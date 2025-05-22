@@ -207,41 +207,65 @@ for symbol in SYMBOLS:
         risk_msg = format_risk_message(symbol, INTERVAL, entry, sl, tp, pos_size, rrr, margin_note)
         send_whatsapp_message(risk_msg)
 
-        try:
-            # Coba ambil harga realtime dari Binance Futures Mark Price API
+                try:
+            # Ambil mark price dari Binance
             entry_realtime = float(client.futures_mark_price(symbol=symbol)['markPrice'])
         except Exception as e:
-            st.warning(f"⚠️ Gagal dapatkan harga realtime: {e}")
-            entry_realtime = entry  # fallback ke harga close terakhir
+            st.warning(f"⚠️ Gagal ambil harga realtime Binance: {e}")
+            entry_realtime = entry  # fallback
 
-        trade_result = execute_trade(
+        def safe_execute_trade_and_notify(symbol, signal, pos_size, entry_realtime, leverage, latest, sl, tp, INTERVAL, candle_time):
+            try:
+                trade_result = execute_trade(
+                    symbol=symbol,
+                    signal=signal,
+                    quantity=pos_size,
+                    entry=entry_realtime,
+                    leverage=leverage,
+                    atr=latest['atr'],
+                    auto_switch=True
+                )
+
+                if trade_result:
+                    message = (
+                        f"✅ TRADE EXECUTED:\n"
+                        f"Pair: {symbol}\n"
+                        f"Posisi: {signal}\n"
+                        f"Entry: {entry_realtime:.2f}\n"
+                        f"SL: {sl:.2f}\n"
+                        f"TP: {tp:.2f}\n"
+                        f"Qty: {pos_size:.4f}"
+                    )
+                    st.success(message.replace("\n", " | "))
+                    send_whatsapp_message(message)
+                    save_last_trade(symbol, INTERVAL, signal, candle_time)
+
+                    with open("log_trading.txt", "a") as f:
+                        f.write(f"{datetime.datetime.now()} | SUCCESS | {message}\n")
+                else:
+                    raise Exception("Trade execution returned False")
+
+            except Exception as e:
+                error_message = f"[ERROR] Gagal eksekusi trade untuk {symbol}: {e}"
+                st.error(error_message)
+                send_whatsapp_message(error_message)
+                with open("log_trading.txt", "a") as f:
+                    f.write(f"{datetime.datetime.now()} | ERROR | {error_message}\n")
+
+        # Jalankan eksekusi aman
+        safe_execute_trade_and_notify(
             symbol=symbol,
             signal=signal,
-            quantity=pos_size,
-            entry=entry_realtime,
+            pos_size=pos_size,
+            entry_realtime=entry_realtime,
             leverage=leverage,
-            atr=latest['atr'],  # bisa None kalau gak ada ATR
-            auto_switch=True
+            latest=latest,
+            sl=sl,
+            tp=tp,
+            INTERVAL=INTERVAL,
+            candle_time=candle_time
         )
-
-        if trade_result:
-            message = (
-                f"✅ TRADE EXECUTED:\n"
-                f"Pair: {symbol}\n"
-                f"Posisi: {signal}\n"
-                f"Entry: {entry_realtime:.2f}\n"
-                f"SL: {sl:.2f}\n"
-                f"TP: {tp:.2f}\n"
-                f"Qty: {pos_size:.4f}"
-            )
-            st.success(message.replace("\n", " | "))
-            send_whatsapp_message(message)
-
-            # Simpan status trade terakhir
-            save_last_trade(symbol, INTERVAL, signal, candle_time)
-
-    else:
-        st.info(f"⏳ Menunggu sinyal {symbol} ({INTERVAL})")
+)
 
     st.subheader(f"📊 {symbol} - Latest Candle")
     st.write(latest[['close', 'volume', 'volume_spike', 'rsi', 'adx', 'macd', 'macd_signal', 'ema']])
