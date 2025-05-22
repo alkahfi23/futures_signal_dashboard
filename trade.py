@@ -53,48 +53,49 @@ def position_exists(symbol):
 def place_trade(symbol, signal, quantity, sl, tp, leverage):
     try:
         client.futures_change_leverage(symbol=symbol, leverage=leverage)
-        qty_precision, step_size, tick_size = get_symbol_precision(symbol)
-
+        qty_precision, step_size = get_symbol_precision(symbol)
         quantity = round_step_size(quantity, step_size)
-        sl = round_price(sl, tick_size)
-        tp = round_price(tp, tick_size)
-
+        
         side = SIDE_BUY if signal == "LONG" else SIDE_SELL
         opposite = SIDE_SELL if signal == "LONG" else SIDE_BUY
 
-        logging.info(f"[ENTRY] {signal} {symbol} Qty: {quantity} SL: {sl} TP: {tp} @Lev {leverage}")
+        print(f"[DEBUG] Entry: {signal} {symbol} Qty: {quantity} Lev: {leverage}")
+        print(f"[DEBUG] SL: {sl}, TP: {tp}, Step Size: {step_size}, Qty Precision: {qty_precision}")
 
-        client.futures_create_order(
+        order_market = client.futures_create_order(
             symbol=symbol,
             side=side,
             type=ORDER_TYPE_MARKET,
             quantity=quantity
         )
+        print(f"[DEBUG] Market order response: {order_market}")
 
-        client.futures_create_order(
+        order_tp = client.futures_create_order(
             symbol=symbol,
             side=opposite,
             type=ORDER_TYPE_LIMIT,
-            price=str(tp),
+            price=str(round(tp, qty_precision)),
             quantity=quantity,
             timeInForce=TIME_IN_FORCE_GTC,
             reduceOnly=True
         )
+        print(f"[DEBUG] TP order response: {order_tp}")
 
-        client.futures_create_order(
+        order_sl = client.futures_create_order(
             symbol=symbol,
             side=opposite,
             type=ORDER_TYPE_STOP_MARKET,
-            stopPrice=str(sl),
+            stopPrice=str(round(sl, qty_precision)),
             quantity=quantity,
             timeInForce=TIME_IN_FORCE_GTC,
             reduceOnly=True
         )
+        print(f"[DEBUG] SL order response: {order_sl}")
 
         return True
 
     except Exception as e:
-        logging.error(f"[Trade] Error: {e}")
+        print(f"[ERROR] Trade Error: {e}")
         return False
 
 def execute_trade_from_signal(
