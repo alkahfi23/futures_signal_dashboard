@@ -6,7 +6,7 @@ import requests
 import datetime
 from binance.client import Client
 
-balances = client.futures_account_balance()
+balances = Client.futures_account_balance()
 for b in balances:
     if b['asset'] == 'USDT':
         print(f"[💰 USDT BALANCE]: {b}")
