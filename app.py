@@ -5,39 +5,17 @@ import pandas as pd
 import requests
 import datetime
 from binance.client import Client
-
-client = Client(os.getenv("BINANCE_API_KEY"), os.getenv("BINANCE_API_SECRET"))
-
-# Cek saldo Futures USDT
-balances = client.futures_account_balance()
-for b in balances:
-    if b['asset'] == 'USDT':
-        print(f"[💰 USDT BALANCE]: {b}")
-
-    
-from twilio.rest import Client as TwilioClient
 from streamlit_autorefresh import st_autorefresh
 from ta.trend import EMAIndicator, ADXIndicator, MACD
 from ta.momentum import RSIIndicator
 from ta.volatility import BollingerBands, AverageTrueRange
-from trade import execute_trade
-
-# ====== Environment Variables ======
-BINANCE_API_KEY = os.getenv("BINANCE_API_KEY")
-BINANCE_API_SECRET = os.getenv("BINANCE_API_SECRET")
-ACCOUNT_SID = os.getenv("TWILIO_SID")
-AUTH_TOKEN = os.getenv("TWILIO_TOKEN")
-FROM = "whatsapp:+14155238886"
-TO = os.getenv("WHATSAPP_TO")
 
 # ====== Initialize Binance Client ======
-client = Client(BINANCE_API_KEY, BINANCE_API_SECRET)
+client = Client(os.getenv("BINANCE_API_KEY"), os.getenv("BINANCE_API_SECRET"))
 client.FUTURES_URL = 'https://fapi.binance.com/fapi'
 
-BASE_URL = "https://api.binance.com"
-
-
 # ====== Config ======
+BASE_URL = "https://api.binance.com"
 SYMBOLS = ["BTCUSDT"]
 INTERVAL = "1m"
 LIMIT = 100
@@ -64,16 +42,6 @@ def get_klines(symbol, interval="1m", limit=100):
         st.error(f"[ERROR] Gagal ambil data {symbol} ({interval}): {e}")
         return pd.DataFrame()
 
-def send_whatsapp_message(message):
-    if not (ACCOUNT_SID and AUTH_TOKEN and TO):
-        st.warning("⚠️ Twilio credentials atau nomor tujuan belum disetel.")
-        return
-    try:
-        twilio_client = TwilioClient(ACCOUNT_SID, AUTH_TOKEN)
-        twilio_client.messages.create(body=message, from_=FROM, to=TO)
-    except Exception as e:
-        st.error(f"[ERROR] WhatsApp: {e}")
-
 def calculate_indicators(df):
     df['ema'] = EMAIndicator(df['close'], window=20).ema_indicator()
     df['rsi'] = RSIIndicator(df['close'], window=14).rsi()
@@ -96,35 +64,20 @@ def enhanced_signal(df):
 
     macd_cross_up = prev["macd"] < prev["macd_signal"] and latest["macd"] > latest["macd_signal"]
     macd_cross_down = prev["macd"] > prev["macd_signal"] and latest["macd"] < latest["macd_signal"]
-
     ema_up = latest["close"] > latest["ema"]
     ema_down = latest["close"] < latest["ema"]
-
     rsi_bullish = latest["rsi"] > 48
     rsi_bearish = latest["rsi"] < 52
-
     bb_upper_break = latest["close"] > latest["bb_upper"]
     bb_lower_break = latest["close"] < latest["bb_lower"]
-
     adx_strong = latest["adx"] > 15
     vol_spike = latest["volume_spike"]
 
     score_long = sum([
-        macd_cross_up,
-        ema_up,
-        rsi_bullish,
-        bb_upper_break,
-        vol_spike,
-        adx_strong
+        macd_cross_up, ema_up, rsi_bullish, bb_upper_break, vol_spike, adx_strong
     ])
-
     score_short = sum([
-        macd_cross_down,
-        ema_down,
-        rsi_bearish,
-        bb_lower_break,
-        vol_spike,
-        adx_strong
+        macd_cross_down, ema_down, rsi_bearish, bb_lower_break, vol_spike, adx_strong
     ])
 
     if score_long >= 3:
@@ -136,7 +89,7 @@ def enhanced_signal(df):
 def load_last_trade(symbol, interval):
     try:
         with open(f"last_trade_{symbol}_{interval}.txt", "r") as f:
-            return f.read().strip().split(",")  # [signal, candle_time]
+            return f.read().strip().split(",")
     except:
         return ["", ""]
 
@@ -144,7 +97,6 @@ def save_last_trade(symbol, interval, signal, candle_time):
     with open(f"last_trade_{symbol}_{interval}.txt", "w") as f:
         f.write(f"{signal},{candle_time}")
 
-# Dummy risk and position size calculation functions (replace with your real ones)
 def calculate_position_size(account_balance, risk_pct, entry, sl, leverage):
     risk_amount = account_balance * (risk_pct / 100)
     stop_loss_distance = abs(entry - sl)
@@ -159,7 +111,6 @@ def calculate_risk_reward(entry, sl, tp):
     return round(rr, 2)
 
 def margin_call_warning(account_balance, pos_size, entry, leverage):
-    # Dummy margin check, improve as needed
     used_margin = (pos_size * entry) / leverage
     margin_threshold = account_balance * 0.1
     if used_margin > margin_threshold:
@@ -175,9 +126,7 @@ def format_risk_message(symbol, interval, entry, sl, tp, pos_size, rr, note):
     )
     return msg
 
-# Trade execution (simplified)
 def execute_trade(symbol, signal, quantity, entry, leverage, atr=None, auto_switch=True, timeout=300):
-    # Place your real order code here
     print(f"[EXECUTE TRADE] {signal} {symbol} Qty: {quantity} Entry: {entry} Leverage: {leverage}")
     return True
 
@@ -190,10 +139,9 @@ for symbol in SYMBOLS:
     df = get_klines(symbol, INTERVAL)
     if df.empty or df.shape[0] < 20:
         st.warning(f"Data kurang untuk {symbol}")
-        continue  # langsung ke symbol berikutnya kalau data kurang
+        continue
 
-    df = calculate_indicators(df)  # pindah ke sini, supaya jalan kalau data cukup
-
+    df = calculate_indicators(df)
     signal = enhanced_signal(df)
     latest = df.iloc[-1]
     candle_time = str(latest['open_time'])
@@ -217,7 +165,7 @@ for symbol in SYMBOLS:
         rrr = calculate_risk_reward(entry, sl, tp)
         is_margin_risk, margin_note = margin_call_warning(account_balance, pos_size, entry, leverage)
         risk_msg = format_risk_message(symbol, INTERVAL, entry, sl, tp, pos_size, rrr, margin_note)
-        send_whatsapp_message(risk_msg)
+        st.info(risk_msg)
 
         try:
             entry_realtime = float(client.futures_mark_price(symbol=symbol)['markPrice'])
@@ -248,7 +196,6 @@ for symbol in SYMBOLS:
                         f"Qty: {pos_size:.4f}"
                     )
                     st.success(message.replace("\n", " | "))
-                    send_whatsapp_message(message)
                     save_last_trade(symbol, INTERVAL, signal, candle_time)
                     with open("log_trading.txt", "a") as f:
                         f.write(f"{datetime.datetime.now()} | SUCCESS | {message}\n")
@@ -258,7 +205,6 @@ for symbol in SYMBOLS:
             except Exception as e:
                 error_message = f"[ERROR] Gagal eksekusi trade untuk {symbol}: {e}"
                 st.error(error_message)
-                send_whatsapp_message(error_message)
                 with open("log_trading.txt", "a") as f:
                     f.write(f"{datetime.datetime.now()} | ERROR | {error_message}\n")
 
@@ -268,12 +214,9 @@ for symbol in SYMBOLS:
     st.write(latest[['close', 'volume', 'volume_spike', 'rsi', 'adx', 'macd', 'macd_signal', 'ema']])
     st.write(f"Signal Detected: {signal}")
 
-# Sidebar time dan debug
 st.sidebar.write("⏱ Waktu sekarang:", datetime.datetime.now().strftime("%H:%M:%S"))
 debug = st.sidebar.checkbox("🔍 Debug Mode", value=False)
 if debug:
     st.write("====== DEBUG: ENHANCED SIGNAL CHECK ======")
     st.write(f"CLOSE: {latest['close']}, OPEN: {latest['open']}")
-    balance = client.futures_account_balance()
-    print(balance)
-
+    st.write(client.futures_account_balance())
