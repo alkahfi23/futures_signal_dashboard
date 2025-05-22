@@ -148,7 +148,7 @@ for symbol in SYMBOLS:
         continue
 
     df = calculate_indicators(df)
-    signal = enhanced_generate_signal(df)
+    signal = enhanced_signal(df)
     latest = df.iloc[-1]
     entry = latest['close']
     candle_time = str(latest['open_time'])
