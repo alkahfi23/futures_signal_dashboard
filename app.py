@@ -235,6 +235,7 @@ st.subheader(f"📊 {symbol} - Latest Candle")
 st.write(latest[['close', 'volume', 'volume_spike', 'rsi', 'adx', 'macd', 'macd_signal', 'ema']])
 st.write(f"Signal Detected: {signal}")
 st.sidebar.write("⏱ Waktu sekarang:", datetime.datetime.now().strftime("%H:%M:%S"))
+debug = st.sidebar.checkbox("🔍 Debug Mode", value=False)
 if debug:
     st.write("====== DEBUG: ENHANCED SIGNAL CHECK ======")
     st.write(f"CLOSE: {latest['close']}, OPEN: {latest['open']}")
