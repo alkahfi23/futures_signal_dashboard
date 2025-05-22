@@ -70,6 +70,7 @@ def calculate_sl_tp(entry, atr, signal, risk_ratio=2.5):
 def position_exists(symbol):
     try:
         positions = client.futures_position_information(symbol=symbol)
+        # pos_amt = posisi terbuka (bisa + untuk long, - untuk short)
         pos = next(p for p in positions if p['symbol'] == symbol)
         pos_amt = float(pos['positionAmt'])
         print(f"[DEBUG] Position amount for {symbol}: {pos_amt}")
