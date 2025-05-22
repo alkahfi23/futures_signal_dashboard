@@ -97,53 +97,43 @@ def place_trade(symbol, signal, quantity, sl, tp, leverage):
         logging.error(f"[Trade] Error: {e}")
         return False
 
-def execute_trade_from_signal(symbol, signal_data, auto_switch=True, timeout=300):
-    """
-    Fungsi utama untuk dieksekusi dari app.py
-
-    signal_data = {
-        'signal': 'LONG' or 'SHORT',
-        'entry': float,
-        'quantity': float,
-        'leverage': int,
-        'atr': float
-    }
-    """
+def execute_trade_from_signal(
+    symbol,
+    signal,
+    quantity,
+    entry,
+    sl,
+    tp,
+    leverage,
+    atr=None,
+    auto_switch=True,
+    timeout=300
+):
     if position_exists(symbol):
-        logging.info(f"[SKIP] Sudah ada posisi terbuka di {symbol}")
+        print(f"⚠️ Posisi aktif di {symbol}, tidak entry ulang.")
         return False
 
-    signal = signal_data['signal']
-    entry = signal_data['entry']
-    quantity = signal_data['quantity']
-    leverage = signal_data['leverage']
-    atr = signal_data.get('atr', None)
-
-    if atr:
-        sl, tp = calculate_sl_tp(entry, atr, signal)
-    else:
-        sl, tp = entry * 0.98, entry * 1.02
-
     success = place_trade(symbol, signal, quantity, sl, tp, leverage)
-    if not success or not auto_switch or not atr:
+    if not success or not auto_switch or atr is None:
         return success
 
     try:
+        print("🔄 Monitoring for SL trigger...")
         start_time = time.time()
-        logging.info("Monitoring SL...")
-
         while time.time() - start_time < timeout:
             price = float(client.futures_symbol_ticker(symbol=symbol)['price'])
             if (signal == "LONG" and price <= sl) or (signal == "SHORT" and price >= sl):
-                logging.warning(f"[SL HIT] Reversing to {'SHORT' if signal == 'LONG' else 'LONG'} at {price}")
+                print(f"⚠️ SL Triggered. Switching to {'SHORT' if signal=='LONG' else 'LONG'}")
+
                 new_signal = "SHORT" if signal == "LONG" else "LONG"
                 new_entry = price
                 new_sl, new_tp = calculate_sl_tp(new_entry, atr, new_signal)
+
                 place_trade(symbol, new_signal, quantity, new_sl, new_tp, leverage)
                 break
             time.sleep(2)
     except Exception as e:
-        logging.error(f"[SL Monitor] Error: {e}")
+        print(f"[ERROR] Monitor SL: {e}")
         return False
 
     return True
