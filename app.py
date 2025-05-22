@@ -263,3 +263,6 @@ debug = st.sidebar.checkbox("🔍 Debug Mode", value=False)
 if debug:
     st.write("====== DEBUG: ENHANCED SIGNAL CHECK ======")
     st.write(f"CLOSE: {latest['close']}, OPEN: {latest['open']}")
+    balance = client.futures_account_balance()
+    print(balance)
+
