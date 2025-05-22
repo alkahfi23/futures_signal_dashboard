@@ -12,6 +12,7 @@ from ta.volatility import BollingerBands
 from twilio.rest import Client
 from streamlit_autorefresh import st_autorefresh
 from ta.volatility import AverageTrueRange
+from manrisk import calculate_position_size, calculate_risk_reward, margin_call_warning, format_risk_message
 
 
 # === Configuration ===
@@ -118,14 +119,32 @@ def enhanced_generate_signal(df):
         vol_spike and
         latest['adx'] > 15
     )
-    if long_cond:
-        tp = latest['close'] + latest['atr'] * 2.5
-        sl = latest['close'] - latest['atr'] * 1.5
-        return f"LONG | TP: {tp:.2f} | SL: {sl:.2f}"
-    elif short_cond:
-        tp = latest['close'] - latest['atr'] * 2.5
-        sl = latest['close'] + latest['atr'] * 1.5
-        return f"SHORT | TP: {tp:.2f} | SL: {sl:.2f}"
+# === Risk Management Section ===
+account_balance = 1000  # Ganti sesuai real account balance kamu
+risk_pct = 1
+leverage = 10
+
+entry = latest['close']
+if "LONG" in signal:
+    sl = entry - latest['atr'] * 1.5
+    tp = entry + latest['atr'] * 2.5
+    direction = "long"
+elif "SHORT" in signal:
+    sl = entry + latest['atr'] * 1.5
+    tp = entry - latest['atr'] * 2.5
+    direction = "short"
+else:
+    sl = tp = direction = None
+
+if sl and tp:
+    pos_size = calculate_position_size(account_balance, risk_pct, entry, sl, leverage)
+    rrr = calculate_risk_reward(entry, sl, tp)
+    is_margin_risk, margin_note = margin_call_warning(account_balance, pos_size, entry, leverage)
+    risk_msg = format_risk_message(symbol, interval, entry, sl, tp, pos_size, rrr, margin_note)
+
+    # ✅ Kirim ke WhatsApp
+    send_whatsapp_message(risk_msg)
+
     return ""
 
 # === Persistent Signal Check ===
