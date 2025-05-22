@@ -6,7 +6,10 @@ import requests
 import datetime
 from binance.client import Client
 
-balances = Client.futures_account_balance()
+client = Client(os.getenv("BINANCE_API_KEY"), os.getenv("BINANCE_API_SECRET"))
+
+# Cek saldo Futures USDT
+balances = client.futures_account_balance()
 for b in balances:
     if b['asset'] == 'USDT':
         print(f"[💰 USDT BALANCE]: {b}")
