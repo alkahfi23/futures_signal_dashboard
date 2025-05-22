@@ -176,10 +176,15 @@ for symbol in SYMBOLS:
             send_whatsapp_message(risk_msg)
 
             trade_result = execute_trade_from_signal(
-                symbol, signal, pos_size, sl, tp, leverage,
-                auto_switch=True,
-                atr=latest['atr']
+            symbol=symbol,
+            signal=signal,
+            quantity=pos_size,
+            entry=entry,
+            leverage=leverage,
+            atr=latest['atr'],
+            auto_switch=True
             )
+ 
 
             if trade_result:
                 message = (
