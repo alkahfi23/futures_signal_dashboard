@@ -189,27 +189,37 @@ for symbol in SYMBOLS:
         sl = entry + latest['atr'] * 1.5
         tp = entry - latest['atr'] * 2.5
 
-    if sl and tp:
-        pos_size = calculate_position_size(account_balance, risk_pct, entry, sl, leverage)
-        rrr = calculate_risk_reward(entry, sl, tp)
-        is_margin_risk, margin_note = margin_call_warning(account_balance, pos_size, entry, leverage)
-        risk_msg = format_risk_message(symbol, INTERVAL, entry, sl, tp, pos_size, rrr, margin_note)
-        send_whatsapp_message(risk_msg)
+        if signal:
+        # Risk Management
+        sl = tp = direction = None
+        if signal == "LONG":
+            sl = entry - latest['atr'] * 1.5
+            tp = entry + latest['atr'] * 2.5
+        elif signal == "SHORT":
+            sl = entry + latest['atr'] * 1.5
+            tp = entry - latest['atr'] * 2.5
 
-        last_signal = load_last_signal(symbol, INTERVAL)
-        if signal != last_signal:
-            msg = f"📢 Signal {signal} untuk {symbol} ({INTERVAL})"
-            st.success(msg)
-            send_whatsapp_message(msg)
-            save_last_signal(symbol, INTERVAL, signal)
+        if sl and tp:
+            pos_size = calculate_position_size(account_balance, risk_pct, entry, sl, leverage)
+            rrr = calculate_risk_reward(entry, sl, tp)
+            is_margin_risk, margin_note = margin_call_warning(account_balance, pos_size, entry, leverage)
+            risk_msg = format_risk_message(symbol, INTERVAL, entry, sl, tp, pos_size, rrr, margin_note)
+            send_whatsapp_message(risk_msg)
 
-            # 🟢 Eksekusi trade dan tampilkan posisi
+            # Eksekusi Trade
             trade_result = execute_trade(symbol, signal, pos_size, sl, tp, leverage)
             if trade_result:
-                st.success(f"🟢 TRADE EXECUTED: {symbol} {signal} @ {entry:.2f} | SL: {sl:.2f} | TP: {tp:.2f} | Size: {pos_size}")
-                send_whatsapp_message(f"✅ TRADE EXECUTED:\n{symbol} {signal}\nEntry: {entry:.2f}\nSL: {sl:.2f}\nTP: {tp:.2f}\nQty: {pos_size}")
-            else:
-                st.error(f"❌ Gagal eksekusi trade untuk {symbol} {signal}")
+                message = (
+                    f"✅ TRADE EXECUTED:\n"
+                    f"Pair: {symbol}\n"
+                    f"Posisi: {signal}\n"
+                    f"Entry: {entry:.2f}\n"
+                    f"SL: {sl:.2f}\n"
+                    f"TP: {tp:.2f}\n"
+                    f"Qty: {pos_size}"
+                )
+                st.success(f"🟢 {message.replace(chr(10), ' | ')}")
+                send_whatsapp_message(message)
 
         last_signal = load_last_signal(symbol, INTERVAL)
         if signal != last_signal:
@@ -221,5 +231,3 @@ for symbol in SYMBOLS:
             st.info(f"✅ Tidak ada perubahan sinyal {symbol} ({INTERVAL}): {signal}")
     else:
         st.info(f"⏳ Menunggu sinyal {symbol} ({INTERVAL})")
-
-    render_chart(df, symbol, INTERVAL, signal)
