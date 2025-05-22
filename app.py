@@ -31,7 +31,7 @@ SYMBOLS = ["BTCUSDT"]
 INTERVAL = "1m"
 LIMIT = 100
 REFRESH_INTERVAL = 55  # seconds
-account_balance = 20   # USD
+account_balance = 19 # USD
 risk_pct = 50
 leverage = 100
 
