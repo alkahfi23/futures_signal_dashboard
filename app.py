@@ -177,13 +177,16 @@ for symbol in SYMBOLS:
 
             trade_result = execute_trade_from_signal(
             symbol=symbol,
-            direction=signal,
+            signal=signal,
             quantity=pos_size,
             entry=entry,
+            sl=sl,
+            tp=tp,
             leverage=leverage,
             atr=latest['atr'],
             auto_switch=True
             )
+
 
  
 
