@@ -10,6 +10,7 @@ from streamlit_autorefresh import st_autorefresh
 from ta.trend import EMAIndicator, ADXIndicator, MACD
 from ta.momentum import RSIIndicator
 from ta.volatility import BollingerBands, AverageTrueRange
+from trade import executed_trade
 
 # ====== Environment Variables ======
 BINANCE_API_KEY = os.getenv("BINANCE_API_KEY")
