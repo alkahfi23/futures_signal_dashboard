@@ -1,68 +1,76 @@
 # trade.py
+
 import os
 from binance.client import Client
 from binance.enums import *
-from dotenv import load_dotenv
 
-load_dotenv()
+# Load API keys from environment
+BINANCE_API_KEY = os.getenv("BINANCE_API_KEY")
+BINANCE_API_SECRET = os.getenv("BINANCE_API_SECRET")
 
-API_KEY = os.getenv("BINANCE_API_KEY")
-API_SECRET = os.getenv("BINANCE_API_SECRET")
-client = Client(API_KEY, API_SECRET)
+client = Client(BINANCE_API_KEY, BINANCE_API_SECRET)
+client.FUTURES_URL = 'https://fapi.binance.com/fapi'
 
-def execute_trade(symbol, direction, quantity, sl_price=None, tp_price=None, leverage=10):
+def round_step_size(quantity, step_size):
+    return round(quantity - (quantity % step_size), 8)
+
+def get_symbol_precision(symbol):
+    try:
+        info = client.futures_exchange_info()
+        for s in info['symbols']:
+            if s['symbol'] == symbol:
+                qty_precision = int(s['quantityPrecision'])
+                step_size = float([f for f in s['filters'] if f['filterType'] == 'LOT_SIZE'][0]['stepSize'])
+                return qty_precision, step_size
+    except Exception as e:
+        print(f"[ERROR] Precision fetch: {e}")
+    return 3, 0.001  # default
+
+def execute_trade(symbol, signal, quantity, sl, tp, leverage):
     try:
         # Set leverage
         client.futures_change_leverage(symbol=symbol, leverage=leverage)
 
-        # Tentukan arah posisi
-        side = SIDE_BUY if direction.upper() == "LONG" else SIDE_SELL
-        close_side = SIDE_SELL if direction.upper() == "LONG" else SIDE_BUY
+        # Round quantity
+        qty_precision, step_size = get_symbol_precision(symbol)
+        quantity = round_step_size(quantity, step_size)
 
-        # Eksekusi entry market
-        order = client.futures_create_order(
+        # Position Side
+        side = SIDE_BUY if signal == "LONG" else SIDE_SELL
+        opposite_side = SIDE_SELL if signal == "LONG" else SIDE_BUY
+
+        # Entry Order (Market)
+        client.futures_create_order(
             symbol=symbol,
             side=side,
             type=ORDER_TYPE_MARKET,
-            quantity=round(quantity, 3)  # presisi 3 desimal (umum untuk BTC/ETH)
+            quantity=quantity
         )
 
-        # Set Stop Loss
-        if sl_price:
-            client.futures_create_order(
-                symbol=symbol,
-                side=close_side,
-                type=ORDER_TYPE_STOP_MARKET,
-                stopPrice=round(sl_price, 2),
-                closePosition=True,
-                timeInForce=TIME_IN_FORCE_GTC,
-                workingType='CONTRACT_PRICE'
-            )
+        # TP Order
+        client.futures_create_order(
+            symbol=symbol,
+            side=opposite_side,
+            type=ORDER_TYPE_LIMIT,
+            price=str(round(tp, 2)),
+            quantity=quantity,
+            timeInForce=TIME_IN_FORCE_GTC,
+            reduceOnly=True
+        )
 
-        # Set Take Profit
-        if tp_price:
-            client.futures_create_order(
-                symbol=symbol,
-                side=close_side,
-                type=ORDER_TYPE_TAKE_PROFIT_MARKET,
-                stopPrice=round(tp_price, 2),
-                closePosition=True,
-                timeInForce=TIME_IN_FORCE_GTC,
-                workingType='CONTRACT_PRICE'
-            )
+        # SL Order
+        client.futures_create_order(
+            symbol=symbol,
+            side=opposite_side,
+            type=ORDER_TYPE_STOP_MARKET,
+            stopPrice=str(round(sl, 2)),
+            quantity=quantity,
+            timeInForce=TIME_IN_FORCE_GTC,
+            reduceOnly=True
+        )
 
-        print(f"✅ TRADE {symbol} {direction} sukses @ qty {quantity:.3f}")
-        return order
+        return True
 
     except Exception as e:
-        print(f"[ERROR] Eksekusi trade gagal: {e}")
-        return None
-
-def calculate_quantity(balance_usdt, risk_pct, entry_price, sl_price, leverage):
-    try:
-        risk_amount = balance_usdt * (risk_pct / 100)
-        stop_loss = abs(entry_price - sl_price)
-        qty = (risk_amount / stop_loss) * leverage
-        return round(qty, 3)
-    except ZeroDivisionError:
-        return 0
+        print(f"[ERROR] Failed to execute trade: {e}")
+        return False
