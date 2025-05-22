@@ -87,19 +87,22 @@ def enhanced_generate_signal(df):
     above_bb = latest['close'] > latest['bb_upper'] * 1.002
     below_bb = latest['close'] < latest['bb_lower'] * 0.998
 
+    # Sinyal LONG (diperlonggar tapi tetap safe)
     long_cond = (
         (early_macd_up or above_bb or strong_candle)
-        and latest['rsi'] > 40
-        and latest['close'] > latest['ema'] * 1.002
-        and vol_spike
-        and latest['adx'] > 7
+        and latest['rsi'] > 50
+        and latest['close'] > latest['ema'] * 1.001  # sedikit lebih longgar
+        and (vol_spike or latest['volume'] > latest['volume_ma20'])  # volume normal juga boleh
+        and latest['adx'] > 15  # lebih strict adx → valid trend
     )
+
+    # Sinyal SHORT (versi aman)
     short_cond = (
         (early_macd_down or below_bb or strong_candle)
-        and latest['rsi'] < 60
-        and latest['close'] < latest['ema'] * 0.998
-        and vol_spike
-        and latest['adx'] > 7
+        and latest['rsi'] < 50
+        and latest['close'] < latest['ema'] * 0.999
+        and (vol_spike or latest['volume'] > latest['volume_ma20'])
+        and latest['adx'] > 15
     )
 
     return "LONG" if long_cond else "SHORT" if short_cond else ""
