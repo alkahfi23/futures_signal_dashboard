@@ -10,20 +10,53 @@ BINANCE_API_SECRET = os.getenv("BINANCE_API_SECRET")
 client = Client(BINANCE_API_KEY, BINANCE_API_SECRET)
 client.FUTURES_URL = 'https://fapi.binance.com/fapi'
 
-def round_step_size(quantity, step_size):
-    return round(math.floor(quantity / step_size) * step_size, 8)
-
-def get_symbol_precision(symbol):
+def get_symbol_info(symbol):
     try:
         info = client.futures_exchange_info()
         for s in info['symbols']:
             if s['symbol'] == symbol:
-                qty_precision = int(s['quantityPrecision'])
-                step_size = float([f for f in s['filters'] if f['filterType'] == 'LOT_SIZE'][0]['stepSize'])
-                return qty_precision, step_size
+                return s
     except Exception as e:
-        print(f"[ERROR] Precision fetch: {e}")
-    return 3, 0.001
+        print(f"[ERROR] Fetch symbol info: {e}")
+    return None
+
+def get_step_size(symbol):
+    s = get_symbol_info(symbol)
+    if s:
+        try:
+            step_size = float([f for f in s['filters'] if f['filterType'] == 'LOT_SIZE'][0]['stepSize'])
+            return step_size
+        except Exception as e:
+            print(f"[ERROR] Get step size: {e}")
+    return 0.001
+
+def get_min_qty(symbol):
+    s = get_symbol_info(symbol)
+    if s:
+        try:
+            min_qty = float([f for f in s['filters'] if f['filterType'] == 'LOT_SIZE'][0]['minQty'])
+            return min_qty
+        except Exception as e:
+            print(f"[ERROR] Get min qty: {e}")
+    return 0.001
+
+def get_tick_size(symbol):
+    s = get_symbol_info(symbol)
+    if s:
+        try:
+            tick_size = float([f for f in s['filters'] if f['filterType'] == 'PRICE_FILTER'][0]['tickSize'])
+            return tick_size
+        except Exception as e:
+            print(f"[ERROR] Get tick size: {e}")
+    return 0.01
+
+def round_step_size(quantity, step_size):
+    rounded = math.floor(quantity / step_size) * step_size
+    return round(rounded, 8)
+
+def round_price(price, tick_size):
+    rounded = math.floor(price / tick_size) * tick_size
+    return round(rounded, 8)
 
 def calculate_sl_tp(entry, atr, signal, risk_ratio=2.5):
     if signal == "LONG":
@@ -47,20 +80,27 @@ def position_exists(symbol):
 
 def place_trade(symbol, signal, quantity, sl, tp, leverage):
     try:
-        print(f"[DEBUG] Setting leverage to {leverage} for {symbol}")
+        print(f"[DEBUG] Setting leverage {leverage} for {symbol}")
         resp_lev = client.futures_change_leverage(symbol=symbol, leverage=leverage)
         print(f"[DEBUG] Leverage response: {resp_lev}")
 
-        qty_precision, step_size = get_symbol_precision(symbol)
+        step_size = get_step_size(symbol)
+        min_qty = get_min_qty(symbol)
+        tick_size = get_tick_size(symbol)
+
         quantity = round_step_size(quantity, step_size)
-        if quantity <= 0:
-            print("[ERROR] Quantity after rounding is 0 or less, aborting trade.")
+        if quantity < min_qty:
+            print(f"[ERROR] Quantity {quantity} less than minimum {min_qty}, aborting trade.")
             return False
+
+        sl = round_price(sl, tick_size)
+        tp = round_price(tp, tick_size)
 
         side = SIDE_BUY if signal == "LONG" else SIDE_SELL
         opposite = SIDE_SELL if signal == "LONG" else SIDE_BUY
 
         print(f"\n[ENTRY] {signal} {symbol} Qty: {quantity} @ Lev {leverage}")
+        print(f"[ENTRY] SL: {sl} TP: {tp}")
 
         order_market = client.futures_create_order(
             symbol=symbol,
@@ -74,7 +114,7 @@ def place_trade(symbol, signal, quantity, sl, tp, leverage):
             symbol=symbol,
             side=opposite,
             type=ORDER_TYPE_LIMIT,
-            price=str(round(tp, 2)),
+            price=str(tp),
             quantity=quantity,
             timeInForce=TIME_IN_FORCE_GTC,
             reduceOnly=True
@@ -85,7 +125,7 @@ def place_trade(symbol, signal, quantity, sl, tp, leverage):
             symbol=symbol,
             side=opposite,
             type=ORDER_TYPE_STOP_MARKET,
-            stopPrice=str(round(sl, 2)),
+            stopPrice=str(sl),
             quantity=quantity,
             timeInForce=TIME_IN_FORCE_GTC,
             reduceOnly=True
