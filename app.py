@@ -206,8 +206,9 @@ for symbol in SYMBOLS:
         risk_msg = format_risk_message(symbol, INTERVAL, entry, sl, tp, pos_size, rrr, margin_note)
         send_whatsapp_message(risk_msg)
 
-                try:
-            entry_realtime = float(client.futures_symbol_ticker(symbol=symbol)['price'])
+        try:
+            # Coba ambil harga realtime dari Binance Futures Mark Price API
+            entry_realtime = float(client.futures_mark_price(symbol=symbol)['markPrice'])
         except Exception as e:
             st.warning(f"⚠️ Gagal dapatkan harga realtime: {e}")
             entry_realtime = entry  # fallback ke harga close terakhir
