@@ -3,6 +3,7 @@ import streamlit as st
 import pandas as pd
 import requests
 import ta
+import datetime
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from twilio.rest import Client
@@ -12,6 +13,7 @@ from ta.momentum import RSIIndicator
 from ta.volatility import BollingerBands, AverageTrueRange
 from manrisk import calculate_position_size, calculate_risk_reward, margin_call_warning, format_risk_message
 from trade import execute_trade
+
 
 # === Environment Variables ===
 ACCOUNT_SID = os.getenv("TWILIO_SID")
@@ -198,5 +200,5 @@ for symbol in SYMBOLS:
 st.subheader(f"📊 {symbol} - Latest Candle")
 st.write(latest[['close', 'volume', 'volume_spike', 'rsi', 'adx', 'macd', 'macd_signal', 'ema']])
 st.write(f"Signal Detected: {signal}")
-
+st.sidebar.write("⏱ Waktu sekarang:", datetime.datetime.now().strftime("%H:%M:%S"))
 
