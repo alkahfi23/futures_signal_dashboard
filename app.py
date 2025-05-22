@@ -1,4 +1,4 @@
-# === Futures Signal Dashboard (Refactored for 1-Minute Only) ===
+# app.py
 
 import os
 import streamlit as st
@@ -7,29 +7,27 @@ import requests
 import ta
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+from twilio.rest import Client
+from streamlit_autorefresh import st_autorefresh
 from ta.trend import EMAIndicator, ADXIndicator, MACD
 from ta.momentum import RSIIndicator
 from ta.volatility import BollingerBands, AverageTrueRange
-from twilio.rest import Client
-from streamlit_autorefresh import st_autorefresh
 from manrisk import calculate_position_size, calculate_risk_reward, margin_call_warning, format_risk_message
-from trade import execute_trade, calculate_quantity
+from trade import execute_trade
 
-
-# === Configuration ===
+# === Environment Variables ===
 ACCOUNT_SID = os.getenv("TWILIO_SID")
 AUTH_TOKEN = os.getenv("TWILIO_TOKEN")
 FROM = "whatsapp:+14155238886"
 TO = os.getenv("WHATSAPP_TO")
-
 BASE_URL = "https://api.binance.com"
+
+# === Configuration ===
 SYMBOLS = ["BTCUSDT", "ETHUSDT"]
 INTERVAL = "1m"
 LIMIT = 100
-REFRESH_INTERVAL = 55
-
-# === Risk Settings ===
-account_balance = 20  # Ubah sesuai akun
+REFRESH_INTERVAL = 55  # seconds
+account_balance = 20   # USD
 risk_pct = 50
 leverage = 10
 
@@ -51,7 +49,7 @@ def get_klines(symbol, interval="1m", limit=100):
 
 def send_whatsapp_message(message):
     if not (ACCOUNT_SID and AUTH_TOKEN and TO):
-        st.warning("⚠️ Twilio credentials or WhatsApp recipient not set.")
+        st.warning("⚠️ Twilio credentials atau nomor tujuan belum disetel.")
         return
     try:
         client = Client(ACCOUNT_SID, AUTH_TOKEN)
@@ -60,8 +58,6 @@ def send_whatsapp_message(message):
         st.error(f"[ERROR] WhatsApp: {e}")
 
 def calculate_indicators(df):
-    if df.shape[0] < 20:
-        return df
     df['ema'] = EMAIndicator(df['close'], window=20).ema_indicator()
     df['rsi'] = RSIIndicator(df['close'], window=14).rsi()
     df['adx'] = ADXIndicator(df['high'], df['low'], df['close'], window=14).adx()
@@ -77,96 +73,37 @@ def calculate_indicators(df):
     df['atr'] = atr.average_true_range()
     return df
 
-def is_volume_spike(df):
-    latest = df.iloc[-1]
-    volume_avg = df['volume'].rolling(window=20).mean().iloc[-1]
-    return latest['volume'] > 2 * volume_avg
-
-def is_strong_trend_candle(df):
-    latest = df.iloc[-1]
-    body_size = abs(latest['close'] - latest['open'])
-    candle_range = latest['high'] - latest['low']
-    return body_size > 0.6 * candle_range
-
 def enhanced_generate_signal(df):
     latest = df.iloc[-1]
     if pd.isna(latest['ema']) or pd.isna(latest['rsi']) or pd.isna(latest['macd']) or pd.isna(latest['macd_signal']):
         return ""
-    vol_spike = is_volume_spike(df)
-    strong_candle = is_strong_trend_candle(df)
-    price_above_bb_upper = latest['close'] > latest['bb_upper'] * 1.005
-    price_below_bb_lower = latest['close'] < latest['bb_lower'] * 0.995
-    early_macd_cross_up = (df['macd'].iloc[-2] < df['macd_signal'].iloc[-2]) and (latest['macd'] > latest['macd_signal'])
-    early_macd_cross_down = (df['macd'].iloc[-2] > df['macd_signal'].iloc[-2]) and (latest['macd'] < latest['macd_signal'])
+    vol_spike = latest['volume_spike']
+    strong_candle = abs(latest['close'] - latest['open']) > 0.6 * (latest['high'] - latest['low'])
+    early_macd_up = df['macd'].iloc[-2] < df['macd_signal'].iloc[-2] and latest['macd'] > latest['macd_signal']
+    early_macd_down = df['macd'].iloc[-2] > df['macd_signal'].iloc[-2] and latest['macd'] < latest['macd_signal']
+    above_bb = latest['close'] > latest['bb_upper'] * 1.005
+    below_bb = latest['close'] < latest['bb_lower'] * 0.995
 
-    long_cond = (
-        (early_macd_cross_up or price_above_bb_upper or strong_candle) and
-        latest['rsi'] > 45 and
-        latest['close'] > latest['ema'] * 1.005 and
-        vol_spike and
-        latest['adx'] > 15
-    )
+    long_cond = (early_macd_up or above_bb or strong_candle) and latest['rsi'] > 45 and latest['close'] > latest['ema'] * 1.005 and vol_spike and latest['adx'] > 15
+    short_cond = (early_macd_down or below_bb or strong_candle) and latest['rsi'] < 55 and latest['close'] < latest['ema'] * 0.995 and vol_spike and latest['adx'] > 15
 
-    short_cond = (
-        (early_macd_cross_down or price_below_bb_lower or strong_candle) and
-        latest['rsi'] < 55 and
-        latest['close'] < latest['ema'] * 0.995 and
-        vol_spike and
-        latest['adx'] > 15
-    )
-
-    if long_cond:
-        return "LONG"
-    elif short_cond:
-        return "SHORT"
-    return ""
+    return "LONG" if long_cond else "SHORT" if short_cond else ""
 
 def load_last_signal(symbol, interval):
-    path = f"last_signal_{symbol}_{interval}.txt"
     try:
-        with open(path, "r") as f:
+        with open(f"last_signal_{symbol}_{interval}.txt", "r") as f:
             return f.read().strip()
-    except FileNotFoundError:
+    except:
         return ""
 
 def save_last_signal(symbol, interval, signal):
-    path = f"last_signal_{symbol}_{interval}.txt"
-    with open(path, "w") as f:
+    with open(f"last_signal_{symbol}_{interval}.txt", "w") as f:
         f.write(signal)
 
-def render_chart(df, symbol, interval, signal):
-    fig = make_subplots(rows=3, cols=1, shared_xaxes=True,
-                        row_heights=[0.5, 0.25, 0.25], vertical_spacing=0.02,
-                        subplot_titles=("Price with Bollinger Bands & EMA", "RSI", "MACD"))
-
-    fig.add_trace(go.Candlestick(
-        x=df['open_time'], open=df['open'], high=df['high'],
-        low=df['low'], close=df['close'], name="Candles"
-    ), row=1, col=1)
-
-    fig.add_trace(go.Scatter(x=df['open_time'], y=df['bb_upper'], line=dict(color='gray', dash='dot'), name='BB Upper'), row=1, col=1)
-    fig.add_trace(go.Scatter(x=df['open_time'], y=df['bb_lower'], line=dict(color='gray', dash='dot'), name='BB Lower'), row=1, col=1)
-    fig.add_trace(go.Scatter(x=df['open_time'], y=df['ema'], line=dict(color='orange'), name='EMA20'), row=1, col=1)
-
-    fig.add_trace(go.Scatter(x=df['open_time'], y=df['rsi'], name='RSI', line=dict(color='purple')), row=2, col=1)
-    fig.add_hline(y=70, line=dict(dash='dot', color='red'), row=2, col=1)
-    fig.add_hline(y=30, line=dict(dash='dot', color='green'), row=2, col=1)
-
-    fig.add_trace(go.Scatter(x=df['open_time'], y=df['macd'], name='MACD', line=dict(color='blue')), row=3, col=1)
-    fig.add_trace(go.Scatter(x=df['open_time'], y=df['macd_signal'], name='Signal Line', line=dict(color='red')), row=3, col=1)
-    fig.add_trace(go.Bar(x=df['open_time'], y=(df['macd'] - df['macd_signal']),
-                         name='MACD Histogram',
-                         marker_color=['green' if v > 0 else 'red' for v in (df['macd'] - df['macd_signal'])]), row=3, col=1)
-
-    fig.update_layout(height=800, title=f"{symbol} - {interval} Signals & Indicators",
-                      xaxis=dict(rangeslider=dict(visible=False)), showlegend=False)
-    st.plotly_chart(fig, use_container_width=True)
-
-# === Streamlit App ===
+# === Streamlit UI ===
 st.set_page_config(page_title="Futures Signal Dashboard", layout="wide")
+st.title("🚀 Futures Signal Dashboard - 1 Minute")
 st_autorefresh(interval=REFRESH_INTERVAL * 1000, key="refresh")
-
-st.title("🚀 Futures Signal Dashboard - 1m Only")
 
 for symbol in SYMBOLS:
     df = get_klines(symbol, INTERVAL)
@@ -175,23 +112,11 @@ for symbol in SYMBOLS:
 
     df = calculate_indicators(df)
     signal = enhanced_generate_signal(df)
-
     latest = df.iloc[-1]
     entry = latest['close']
 
-   if signal:
-    # Risk Management
-    sl = tp = None
-    if signal == "LONG":
-        sl = entry - latest['atr'] * 1.5
-        tp = entry + latest['atr'] * 2.5
-    elif signal == "SHORT":
-        sl = entry + latest['atr'] * 1.5
-        tp = entry - latest['atr'] * 2.5
-
-        if signal:
-        # Risk Management
-        sl = tp = direction = None
+    if signal:
+        sl = tp = None
         if signal == "LONG":
             sl = entry - latest['atr'] * 1.5
             tp = entry + latest['atr'] * 2.5
@@ -206,7 +131,6 @@ for symbol in SYMBOLS:
             risk_msg = format_risk_message(symbol, INTERVAL, entry, sl, tp, pos_size, rrr, margin_note)
             send_whatsapp_message(risk_msg)
 
-            # Eksekusi Trade
             trade_result = execute_trade(symbol, signal, pos_size, sl, tp, leverage)
             if trade_result:
                 message = (
@@ -216,18 +140,17 @@ for symbol in SYMBOLS:
                     f"Entry: {entry:.2f}\n"
                     f"SL: {sl:.2f}\n"
                     f"TP: {tp:.2f}\n"
-                    f"Qty: {pos_size}"
+                    f"Qty: {pos_size:.4f}"
                 )
-                st.success(f"🟢 {message.replace(chr(10), ' | ')}")
+                st.success(message.replace("\n", " | "))
                 send_whatsapp_message(message)
 
         last_signal = load_last_signal(symbol, INTERVAL)
         if signal != last_signal:
-            msg = f"📢 Signal {signal} untuk {symbol} ({INTERVAL})"
-            st.success(msg)
-            send_whatsapp_message(msg)
+            st.success(f"📢 New signal {signal} for {symbol}!")
+            send_whatsapp_message(f"📢 Signal {signal} untuk {symbol}!")
             save_last_signal(symbol, INTERVAL, signal)
         else:
-            st.info(f"✅ Tidak ada perubahan sinyal {symbol} ({INTERVAL}): {signal}")
+            st.info(f"✅ No change for {symbol}: {signal}")
     else:
         st.info(f"⏳ Menunggu sinyal {symbol} ({INTERVAL})")
