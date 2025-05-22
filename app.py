@@ -186,7 +186,7 @@ for symbol in SYMBOLS:
     latest = df.iloc[-1]
     candle_time = str(latest['open_time'])
 
-    if signal:
+        if signal:
         last_trade_signal, last_trade_time = load_last_trade(symbol, INTERVAL)
         if signal == last_trade_signal and candle_time == last_trade_time:
             st.warning(f"⛔ Duplikat trade {signal} {symbol} - dilewati")
@@ -207,12 +207,11 @@ for symbol in SYMBOLS:
         risk_msg = format_risk_message(symbol, INTERVAL, entry, sl, tp, pos_size, rrr, margin_note)
         send_whatsapp_message(risk_msg)
 
-                try:
-            # Ambil mark price dari Binance
+        try:
             entry_realtime = float(client.futures_mark_price(symbol=symbol)['markPrice'])
         except Exception as e:
             st.warning(f"⚠️ Gagal ambil harga realtime Binance: {e}")
-            entry_realtime = entry  # fallback
+            entry_realtime = entry
 
         def safe_execute_trade_and_notify(symbol, signal, pos_size, entry_realtime, leverage, latest, sl, tp, INTERVAL, candle_time):
             try:
@@ -239,7 +238,6 @@ for symbol in SYMBOLS:
                     st.success(message.replace("\n", " | "))
                     send_whatsapp_message(message)
                     save_last_trade(symbol, INTERVAL, signal, candle_time)
-
                     with open("log_trading.txt", "a") as f:
                         f.write(f"{datetime.datetime.now()} | SUCCESS | {message}\n")
                 else:
@@ -252,7 +250,6 @@ for symbol in SYMBOLS:
                 with open("log_trading.txt", "a") as f:
                     f.write(f"{datetime.datetime.now()} | ERROR | {error_message}\n")
 
-        # Jalankan eksekusi aman
         safe_execute_trade_and_notify(
             symbol=symbol,
             signal=signal,
@@ -265,7 +262,6 @@ for symbol in SYMBOLS:
             INTERVAL=INTERVAL,
             candle_time=candle_time
         )
-)
 
     st.subheader(f"📊 {symbol} - Latest Candle")
     st.write(latest[['close', 'volume', 'volume_spike', 'rsi', 'adx', 'macd', 'macd_signal', 'ema']])
