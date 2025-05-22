@@ -23,13 +23,13 @@ TO = os.getenv("WHATSAPP_TO")
 BASE_URL = "https://api.binance.com"
 
 # === Configuration ===
-SYMBOLS = ["BTCUSDT", "ETHUSDT"]
+SYMBOLS = ["BTCUSDT"]
 INTERVAL = "1m"
 LIMIT = 100
 REFRESH_INTERVAL = 55  # seconds
 account_balance = 20   # USD
 risk_pct = 50
-leverage = 10
+leverage = 100
 
 @st.cache_data(ttl=55)
 def get_klines(symbol, interval="1m", limit=100):
