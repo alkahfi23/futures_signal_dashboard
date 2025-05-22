@@ -136,6 +136,8 @@ elif "SHORT" in signal:
 else:
     sl = tp = direction = None
 
+return ""
+
 if sl and tp:
     pos_size = calculate_position_size(account_balance, risk_pct, entry, sl, leverage)
     rrr = calculate_risk_reward(entry, sl, tp)
@@ -144,8 +146,6 @@ if sl and tp:
 
     # ✅ Kirim ke WhatsApp
     send_whatsapp_message(risk_msg)
-
-    return ""
 
 # === Persistent Signal Check ===
 def load_last_signal(symbol, interval):
