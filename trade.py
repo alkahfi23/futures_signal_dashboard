@@ -1,5 +1,6 @@
 import os
 import time
+import math
 from binance.client import Client
 from binance.enums import *
 
@@ -10,7 +11,7 @@ client = Client(BINANCE_API_KEY, BINANCE_API_SECRET)
 client.FUTURES_URL = 'https://fapi.binance.com/fapi'
 
 def round_step_size(quantity, step_size):
-    return round(quantity - (quantity % step_size), 8)
+    return round(math.floor(quantity / step_size) * step_size, 8)
 
 def get_symbol_precision(symbol):
     try:
