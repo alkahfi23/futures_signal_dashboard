@@ -12,7 +12,7 @@ from ta.trend import EMAIndicator, ADXIndicator, MACD
 from ta.momentum import RSIIndicator
 from ta.volatility import BollingerBands, AverageTrueRange
 from manrisk import calculate_position_size, calculate_risk_reward, margin_call_warning, format_risk_message
-from trade import execute_trade_from_signal
+from trade import execute_trade
 
 # === Environment Variables ===
 ACCOUNT_SID = os.getenv("TWILIO_SID")
@@ -175,7 +175,7 @@ for symbol in SYMBOLS:
             risk_msg = format_risk_message(symbol, INTERVAL, entry, sl, tp, pos_size, rrr, margin_note)
             send_whatsapp_message(risk_msg)
 
-            trade_result = execute_trade_from_signal(
+            trade_result = execute_trade(
             symbol=symbol,
             signal=signal,
             quantity=pos_size,
