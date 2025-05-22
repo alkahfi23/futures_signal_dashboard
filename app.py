@@ -20,12 +20,11 @@ SYMBOLS = ["BTCUSDT"]
 INTERVAL = "1m"
 LIMIT = 100
 REFRESH_INTERVAL = 55  # seconds
-account_balance = 20# USD
+account_balance = 20  # USD
 risk_pct = 20
 leverage = 100
 
 # ====== Helper Functions ======
-
 @st.cache_data(ttl=55)
 def get_klines(symbol, interval="1m", limit=100):
     url = f"{BASE_URL}/api/v3/klines?symbol={symbol}&interval={interval}&limit={limit}"
@@ -33,8 +32,9 @@ def get_klines(symbol, interval="1m", limit=100):
         res = requests.get(url)
         data = res.json()
         df = pd.DataFrame(data, columns=[
-            'open_time','open','high','low','close','volume',
-            'close_time','qav','num_trades','taker_base_vol','taker_quote_vol','ignore'])
+            'open_time', 'open', 'high', 'low', 'close', 'volume',
+            'close_time', 'qav', 'num_trades', 'taker_base_vol', 'taker_quote_vol', 'ignore'
+        ])
         df['open_time'] = pd.to_datetime(df['open_time'], unit='ms')
         df[['open', 'high', 'low', 'close', 'volume']] = df[['open', 'high', 'low', 'close', 'volume']].astype(float)
         return df
@@ -73,12 +73,8 @@ def enhanced_signal(df):
     adx_strong = latest["adx"] > 15
     vol_spike = latest["volume_spike"]
 
-    score_long = sum([
-        macd_cross_up, ema_up, rsi_bullish, bb_upper_break, vol_spike, adx_strong
-    ])
-    score_short = sum([
-        macd_cross_down, ema_down, rsi_bearish, bb_lower_break, vol_spike, adx_strong
-    ])
+    score_long = sum([macd_cross_up, ema_up, rsi_bullish, bb_upper_break, vol_spike, adx_strong])
+    score_short = sum([macd_cross_down, ema_down, rsi_bearish, bb_lower_break, vol_spike, adx_strong])
 
     if score_long >= 3:
         return "LONG"
@@ -101,6 +97,7 @@ def calculate_position_size(account_balance, risk_pct, entry, sl, leverage):
     risk_amount = account_balance * (risk_pct / 100)
     stop_loss_distance = abs(entry - sl)
     if stop_loss_distance == 0:
+        st.warning("⚠️ Stop loss distance = 0. Posisi tidak valid.")
         return 0
     raw_pos_size = risk_amount / stop_loss_distance
     pos_size = raw_pos_size * leverage
@@ -119,16 +116,15 @@ def margin_call_warning(account_balance, pos_size, entry, leverage):
         return False, ""
 
 def format_risk_message(symbol, interval, entry, sl, tp, pos_size, rr, note):
-    msg = (
+    return (
         f"Signal: {symbol} {interval}\n"
         f"Entry: {entry:.2f}\nSL: {sl:.2f}\nTP: {tp:.2f}\n"
         f"Position Size: {pos_size:.4f}\nRR: {rr}\n{note}"
     )
-    return msg
 
 def execute_trade(symbol, signal, quantity, entry, leverage, atr=None, auto_switch=True, timeout=300):
     print(f"[EXECUTE TRADE] {signal} {symbol} Qty: {quantity} Entry: {entry} Leverage: {leverage}")
-    return True
+    return True  # Simulasi berhasil
 
 # ====== Streamlit UI ======
 st.set_page_config(page_title="Futures Signal Dashboard", layout="wide")
@@ -153,7 +149,6 @@ for symbol in SYMBOLS:
             continue
 
         entry = latest['close']
-        sl = tp = None
         if signal == "LONG":
             sl = entry - latest['atr'] * 1.5
             tp = entry + latest['atr'] * 2.5
@@ -167,7 +162,7 @@ for symbol in SYMBOLS:
         risk_msg = format_risk_message(symbol, INTERVAL, entry, sl, tp, pos_size, rrr, margin_note)
         st.info(risk_msg)
 
-            try:
+        try:
             entry_realtime = float(client.futures_mark_price(symbol=symbol)['markPrice'])
         except Exception as e:
             st.warning(f"⚠️ Gagal ambil harga realtime Binance: {e}")
@@ -184,7 +179,6 @@ for symbol in SYMBOLS:
                     atr=latest['atr'],
                     auto_switch=True
                 )
-
                 if trade_result:
                     message = (
                         f"✅ TRADE EXECUTED:\n"
@@ -201,21 +195,20 @@ for symbol in SYMBOLS:
                         f.write(f"{datetime.datetime.now()} | SUCCESS | {message}\n")
                 else:
                     raise Exception("Trade execution returned False")
-
             except Exception as e:
                 error_message = f"[ERROR] Gagal eksekusi trade untuk {symbol}: {e}"
                 st.error(error_message)
                 with open("log_trading.txt", "a") as f:
                     f.write(f"{datetime.datetime.now()} | ERROR | {error_message}\n")
 
-        # ✅ Hanya eksekusi jika tombol ditekan
         if st.button(f"🚨 Eksekusi Trade {symbol} ({signal})"):
-        safe_execute_trade_and_notify()
+            safe_execute_trade_and_notify()
 
     st.subheader(f"📊 {symbol} - Latest Candle")
     st.write(latest[['close', 'volume', 'volume_spike', 'rsi', 'adx', 'macd', 'macd_signal', 'ema']])
-    st.write(f"Signal Detected: {signal}")
+    st.write(f"Signal Detected: {signal if signal else 'Tidak ada'}")
 
+# Sidebar info
 st.sidebar.write("⏱ Waktu sekarang:", datetime.datetime.now().strftime("%H:%M:%S"))
 debug = st.sidebar.checkbox("🔍 Debug Mode", value=False)
 if debug:
