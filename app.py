@@ -8,12 +8,10 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from ta.trend import EMAIndicator, ADXIndicator, MACD
 from ta.momentum import RSIIndicator
-from ta.volatility import BollingerBands
+from ta.volatility import BollingerBands, AverageTrueRange
 from twilio.rest import Client
 from streamlit_autorefresh import st_autorefresh
-from ta.volatility import AverageTrueRange
 from manrisk import calculate_position_size, calculate_risk_reward, margin_call_warning, format_risk_message
-
 
 # === Configuration ===
 ACCOUNT_SID = os.getenv("TWILIO_SID")
@@ -28,6 +26,7 @@ LIMIT = 100
 REFRESH_INTERVAL = 55
 TRAILING_STOP_PERCENT = 0.01
 
+# === Functions ===
 @st.cache_data(ttl=55)
 def get_klines(symbol, interval="1m", limit=100):
     url = f"{BASE_URL}/api/v3/klines?symbol={symbol}&interval={interval}&limit={limit}"
@@ -46,7 +45,7 @@ def get_klines(symbol, interval="1m", limit=100):
 
 def send_whatsapp_message(message):
     if not (ACCOUNT_SID and AUTH_TOKEN and TO):
-        st.warning("⚠️ Twilio credentials or WhatsApp recipient not set in environment variables.")
+        st.warning("⚠️ Twilio credentials or WhatsApp recipient not set.")
         return
     try:
         client = Client(ACCOUNT_SID, AUTH_TOKEN)
@@ -68,9 +67,7 @@ def calculate_indicators(df):
     df['bb_lower'] = bb.bollinger_lband()
     df['volume_ma20'] = df['volume'].rolling(window=20).mean()
     df['volume_spike'] = df['volume'] > df['volume_ma20'] * 2
-    atr = AverageTrueRange(df['high'], df['low'], df['close'], window=14)
-    df['atr'] = atr.average_true_range()
-
+    df['atr'] = AverageTrueRange(df['high'], df['low'], df['close'], window=14).average_true_range()
     return df
 
 def is_volume_spike(df):
@@ -86,9 +83,8 @@ def is_strong_trend_candle(df):
 
 def enhanced_generate_signal(df):
     latest = df.iloc[-1]
-
     if pd.isna(latest['ema']) or pd.isna(latest['rsi']) or pd.isna(latest['macd']) or pd.isna(latest['macd_signal']):
-        return ""
+        return "", latest
 
     vol_spike = is_volume_spike(df)
     strong_candle = is_strong_trend_candle(df)
@@ -98,12 +94,6 @@ def enhanced_generate_signal(df):
     early_macd_cross_up = (df['macd'].iloc[-2] < df['macd_signal'].iloc[-2]) and (latest['macd'] > latest['macd_signal'])
     early_macd_cross_down = (df['macd'].iloc[-2] > df['macd_signal'].iloc[-2]) and (latest['macd'] < latest['macd_signal'])
 
-    st.write(f"[DEBUG] Harga: {latest['close']:.2f}, EMA: {latest['ema']:.2f}, RSI: {latest['rsi']:.2f}, "
-             f"MACD: {latest['macd']:.4f}, MACD Signal: {latest['macd_signal']:.4f}, "
-             f"ADX: {latest['adx']:.2f}, BB Upper: {latest['bb_upper']:.2f}, BB Lower: {latest['bb_lower']:.2f}, "
-             f"Vol Spike: {vol_spike}, Strong Candle: {strong_candle}, "
-             f"MACD Early Up: {early_macd_cross_up}, MACD Early Down: {early_macd_cross_down}")
-
     long_cond = (
         (early_macd_cross_up or price_above_bb_upper or strong_candle) and
         latest['rsi'] > 45 and
@@ -111,7 +101,6 @@ def enhanced_generate_signal(df):
         vol_spike and
         latest['adx'] > 15
     )
-
     short_cond = (
         (early_macd_cross_down or price_below_bb_lower or strong_candle) and
         latest['rsi'] < 55 and
@@ -119,37 +108,14 @@ def enhanced_generate_signal(df):
         vol_spike and
         latest['adx'] > 15
     )
-    return ""
-    
-# === Risk Management Section ===
-account_balance = 20 # Ganti sesuai real account balance kamu
-risk_pct = 50
-leverage = 10
 
-entry = latest['close']
-if "LONG" in signal:
-    sl = entry - latest['atr'] * 1.5
-    tp = entry + latest['atr'] * 2.5
-    direction = "long"
-elif "SHORT" in signal:
-    sl = entry + latest['atr'] * 1.5
-    tp = entry - latest['atr'] * 2.5
-    direction = "short"
-else:
-    sl = tp = direction = None
+    if long_cond:
+        return "LONG", latest
+    elif short_cond:
+        return "SHORT", latest
+    else:
+        return "", latest
 
-
-
-if sl and tp:
-    pos_size = calculate_position_size(account_balance, risk_pct, entry, sl, leverage)
-    rrr = calculate_risk_reward(entry, sl, tp)
-    is_margin_risk, margin_note = margin_call_warning(account_balance, pos_size, entry, leverage)
-    risk_msg = format_risk_message(symbol, interval, entry, sl, tp, pos_size, rrr, margin_note)
-
-    # ✅ Kirim ke WhatsApp
-    send_whatsapp_message(risk_msg)
-
-# === Persistent Signal Check ===
 def load_last_signal(symbol, interval):
     path = f"last_signal_{symbol}_{interval}.txt"
     try:
@@ -164,10 +130,13 @@ def save_last_signal(symbol, interval, signal):
         f.write(signal)
 
 # === Streamlit UI ===
-st.set_page_config(page_title="Fuures Signal Dashboard", layout="wide")
+st.set_page_config(page_title="Futures Signal Dashboard", layout="wide")
 st_autorefresh(interval=REFRESH_INTERVAL * 1000, key="datarefresh")
 
 st.title("🚀 Futures Signal Dashboard")
+account_balance = 20  # 💰 Set your actual balance
+risk_pct = 50
+leverage = 10
 
 for symbol in SYMBOLS:
     for interval in INTERVALS:
@@ -175,79 +144,57 @@ for symbol in SYMBOLS:
         if df.empty or df.shape[0] < 20:
             continue
         df = calculate_indicators(df)
-        signal = enhanced_generate_signal(df)
+        signal, latest = enhanced_generate_signal(df)
+        entry = latest['close']
 
-        if interval == "1m":
-            latest_price = df['close'].iloc[-1]
+        # === Chart Section ===
+        col1, col2 = st.columns([1, 3])
+        with col1:
+            st.metric(label=f"{symbol} ({interval})", value=entry, delta=signal)
 
-            col1, col2 = st.columns([1, 3])
-            with col1:
-                st.metric(label=f"{symbol} ({interval})", value=latest_price, delta=signal)
+        with col2:
+            fig = make_subplots(rows=3, cols=1, shared_xaxes=True, row_heights=[0.5, 0.25, 0.25], vertical_spacing=0.02)
+            fig.add_trace(go.Candlestick(x=df['open_time'], open=df['open'], high=df['high'],
+                                         low=df['low'], close=df['close'], name="Candles"), row=1, col=1)
+            fig.add_trace(go.Scatter(x=df['open_time'], y=df['bb_upper'], line=dict(color='gray', dash='dot'), name='BB Upper'), row=1, col=1)
+            fig.add_trace(go.Scatter(x=df['open_time'], y=df['bb_lower'], line=dict(color='gray', dash='dot'), name='BB Lower'), row=1, col=1)
+            fig.add_trace(go.Scatter(x=df['open_time'], y=df['ema'], line=dict(color='orange'), name='EMA20'), row=1, col=1)
+            fig.add_trace(go.Scatter(x=df['open_time'], y=df['rsi'], name='RSI', line=dict(color='purple')), row=2, col=1)
+            fig.add_hline(y=70, line=dict(dash='dot', color='red'), row=2, col=1)
+            fig.add_hline(y=30, line=dict(dash='dot', color='green'), row=2, col=1)
+            fig.add_trace(go.Scatter(x=df['open_time'], y=df['macd'], name='MACD', line=dict(color='blue')), row=3, col=1)
+            fig.add_trace(go.Scatter(x=df['open_time'], y=df['macd_signal'], name='Signal Line', line=dict(color='red')), row=3, col=1)
+            fig.add_trace(go.Bar(x=df['open_time'], y=(df['macd'] - df['macd_signal']),
+                                 name='MACD Histogram',
+                                 marker_color=['green' if v > 0 else 'red' for v in (df['macd'] - df['macd_signal'])]), row=3, col=1)
+            fig.update_layout(height=800, title=f"{symbol} - {interval} Signals & Indicators", xaxis=dict(rangeslider=dict(visible=False)), showlegend=False)
+            st.plotly_chart(fig, use_container_width=True)
 
-            with col2:
-                fig = make_subplots(
-                    rows=3, cols=1,
-                    shared_xaxes=True,
-                    row_heights=[0.5, 0.25, 0.25],
-                    vertical_spacing=0.02,
-                    subplot_titles=("Price with Bollinger Bands & EMA", "RSI", "MACD")
-                )
+        # === Signal Change Handling & Risk Management ===
+        last_signal = load_last_signal(symbol, interval)
 
-                fig.add_trace(go.Candlestick(
-                    x=df['open_time'], open=df['open'], high=df['high'],
-                    low=df['low'], close=df['close'], name="Candles"
-                ), row=1, col=1)
+        if signal and signal != last_signal:
+            st.success(f"📢 New Signal: {signal} on {symbol} ({interval})")
+            send_whatsapp_message(f"📢 Signal {signal} untuk {symbol} ({interval})")
+            save_last_signal(symbol, interval, signal)
 
-                fig.add_trace(go.Scatter(
-                    x=df['open_time'], y=df['bb_upper'], line=dict(color='gray', dash='dot'), name='BB Upper'
-                ), row=1, col=1)
+            atr = latest['atr']
+            if signal == "LONG":
+                sl = entry - atr * 1.5
+                tp = entry + atr * 2.5
+                direction = "long"
+            elif signal == "SHORT":
+                sl = entry + atr * 1.5
+                tp = entry - atr * 2.5
+                direction = "short"
 
-                fig.add_trace(go.Scatter(
-                    x=df['open_time'], y=df['bb_lower'], line=dict(color='gray', dash='dot'), name='BB Lower'
-                ), row=1, col=1)
+            pos_size = calculate_position_size(account_balance, risk_pct, entry, sl, leverage)
+            rrr = calculate_risk_reward(entry, sl, tp)
+            is_margin_risk, margin_note = margin_call_warning(account_balance, pos_size, entry, leverage)
+            risk_msg = format_risk_message(symbol, interval, entry, sl, tp, pos_size, rrr, margin_note)
+            send_whatsapp_message(risk_msg)
 
-                fig.add_trace(go.Scatter(
-                    x=df['open_time'], y=df['ema'], line=dict(color='orange'), name='EMA20'
-                ), row=1, col=1)
-
-                fig.add_trace(go.Scatter(
-                    x=df['open_time'], y=df['rsi'], name='RSI', line=dict(color='purple')
-                ), row=2, col=1)
-
-                fig.add_hline(y=70, line=dict(dash='dot', color='red'), row=2, col=1)
-                fig.add_hline(y=30, line=dict(dash='dot', color='green'), row=2, col=1)
-
-                fig.add_trace(go.Scatter(
-                    x=df['open_time'], y=df['macd'], name='MACD', line=dict(color='blue')
-                ), row=3, col=1)
-
-                fig.add_trace(go.Scatter(
-                    x=df['open_time'], y=df['macd_signal'], name='Signal Line', line=dict(color='red')
-                ), row=3, col=1)
-
-                fig.add_trace(go.Bar(
-                    x=df['open_time'], y=(df['macd'] - df['macd_signal']), name='MACD Histogram',
-                    marker_color=['green' if v > 0 else 'red' for v in (df['macd'] - df['macd_signal'])]
-                ), row=3, col=1)
-
-                fig.update_layout(
-                    height=800,
-                    title=f"{symbol} - {interval} Signals & Indicators",
-                    xaxis=dict(rangeslider=dict(visible=False)),
-                    showlegend=False
-                )
-
-                st.plotly_chart(fig, use_container_width=True)
-
-            # === Signal Handling ===
-            last_signal = load_last_signal(symbol, interval)
-
-            if signal and signal != last_signal:
-                msg = f"📢 Signal {signal} untuk {symbol} ({interval})"
-                st.success(msg)
-                send_whatsapp_message(msg)
-                save_last_signal(symbol, interval, signal)
-            elif not signal:
-                st.info(f"ℹ️ Menunggu sinyal untuk {symbol} ({interval})")
-            else:
-                st.info(f"✅ Tidak ada perubahan sinyal {symbol} ({interval}): {signal}")
+        elif not signal:
+            st.info(f"ℹ️ Menunggu sinyal untuk {symbol} ({interval})")
+        else:
+            st.info(f"✅ Tidak ada perubahan sinyal {symbol} ({interval}): {signal}")
