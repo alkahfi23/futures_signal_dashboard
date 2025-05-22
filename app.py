@@ -1,5 +1,3 @@
-# app.py
-
 import os
 import streamlit as st
 import pandas as pd
@@ -100,6 +98,17 @@ def save_last_signal(symbol, interval, signal):
     with open(f"last_signal_{symbol}_{interval}.txt", "w") as f:
         f.write(signal)
 
+def load_last_trade(symbol, interval):
+    try:
+        with open(f"last_trade_{symbol}_{interval}.txt", "r") as f:
+            return f.read().strip().split(",")  # [signal, candle_time]
+    except:
+        return ["", ""]
+
+def save_last_trade(symbol, interval, signal, candle_time):
+    with open(f"last_trade_{symbol}_{interval}.txt", "w") as f:
+        f.write(f"{signal},{candle_time}")
+
 # === Streamlit UI ===
 st.set_page_config(page_title="Futures Signal Dashboard", layout="wide")
 st.title("🚀 Futures Signal Dashboard - 1 Minute")
@@ -114,8 +123,15 @@ for symbol in SYMBOLS:
     signal = enhanced_generate_signal(df)
     latest = df.iloc[-1]
     entry = latest['close']
+    candle_time = str(latest['open_time'])
 
     if signal:
+        # Cek apakah trade sudah dilakukan pada candle ini
+        last_trade_signal, last_trade_time = load_last_trade(symbol, INTERVAL)
+        if signal == last_trade_signal and candle_time == last_trade_time:
+            st.warning(f"⛔ Duplikat trade {signal} {symbol} - dilewati")
+            continue
+
         sl = tp = None
         if signal == "LONG":
             sl = entry - latest['atr'] * 1.5
@@ -131,7 +147,6 @@ for symbol in SYMBOLS:
             risk_msg = format_risk_message(symbol, INTERVAL, entry, sl, tp, pos_size, rrr, margin_note)
             send_whatsapp_message(risk_msg)
 
-            # Panggil execute_trade dengan auto_switch dan atr terbaru
             trade_result = execute_trade(
                 symbol, signal, pos_size, sl, tp, leverage,
                 auto_switch=True,
@@ -150,6 +165,9 @@ for symbol in SYMBOLS:
                 )
                 st.success(message.replace("\n", " | "))
                 send_whatsapp_message(message)
+
+                # Simpan status trade terakhir
+                save_last_trade(symbol, INTERVAL, signal, candle_time)
 
         last_signal = load_last_signal(symbol, INTERVAL)
         if signal != last_signal:
