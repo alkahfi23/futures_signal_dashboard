@@ -75,68 +75,51 @@ def calculate_indicators(df):
 
 def enhanced_generate_signal(df, debug=False):
     latest = df.iloc[-1]
-    
     if pd.isna(latest['ema']) or pd.isna(latest['rsi']) or pd.isna(latest['macd']) or pd.isna(latest['macd_signal']):
-        if debug:
-            print("[DEBUG] Missing indicator values (EMA/RSI/MACD).")
         return ""
 
-    vol_spike = latest['volume'] > latest['volume_ma20'] * 1.5
-    strong_candle = abs(latest['close'] - latest['open']) > 0.5 * (latest['high'] - latest['low'])
+    vol_spike = latest['volume'] > latest['volume_ma20'] * 1.2  # Lebih longgar
+    strong_candle = abs(latest['close'] - latest['open']) > 0.3 * (latest['high'] - latest['low'])
 
     early_macd_up = df['macd'].iloc[-2] < df['macd_signal'].iloc[-2] and latest['macd'] > latest['macd_signal']
     early_macd_down = df['macd'].iloc[-2] > df['macd_signal'].iloc[-2] and latest['macd'] < latest['macd_signal']
 
-    above_bb = latest['close'] > latest['bb_upper'] * 1.002
-    below_bb = latest['close'] < latest['bb_lower'] * 0.998
+    above_bb = latest['close'] > latest['bb_upper'] * 1.001
+    below_bb = latest['close'] < latest['bb_lower'] * 0.999
 
     bb_width = latest['bb_upper'] - latest['bb_lower']
     avg_range = df['high'].iloc[-20:].mean() - df['low'].iloc[-20:].mean()
-    bb_squeeze = bb_width < avg_range * 0.5
-
-    if debug:
-        print("====== DEBUG: ENHANCED SIGNAL CHECK ======")
-        print(f"CLOSE: {latest['close']}, OPEN: {latest['open']}")
-        print(f"EMA: {latest['ema']:.4f}, RSI: {latest['rsi']:.2f}, MACD: {latest['macd']:.4f}, Signal: {latest['macd_signal']:.4f}")
-        print(f"ADX: {latest['adx']:.2f}, Volume: {latest['volume']:.2f}, MA20 Volume: {latest['volume_ma20']:.2f}")
-        print(f"Bollinger Upper: {latest['bb_upper']:.4f}, Lower: {latest['bb_lower']:.4f}")
-        print(f"Vol Spike: {vol_spike}, Strong Candle: {strong_candle}")
-        print(f"MACD Up: {early_macd_up}, MACD Down: {early_macd_down}")
-        print(f"Above BB: {above_bb}, Below BB: {below_bb}")
-        print(f"BB Width: {bb_width:.4f}, Avg Range: {avg_range:.4f}, BB Squeeze: {bb_squeeze}")
-        print("==========================================")
+    bb_squeeze = bb_width < avg_range * 0.3  # Longgarkan
 
     if bb_squeeze:
-        if debug:
-            print("[DEBUG] BB Squeeze detected - no trade signal.")
         return ""
 
     long_cond = (
         (early_macd_up or above_bb or strong_candle)
-        and latest['rsi'] > 40
-        and latest['close'] > latest['ema'] * 1.002
+        and latest['rsi'] > 45
+        and latest['close'] > latest['ema'] * 1.001
         and vol_spike
-        and latest['adx'] > 10
+        and latest['adx'] > 8
     )
     short_cond = (
         (early_macd_down or below_bb or strong_candle)
-        and latest['rsi'] < 60
-        and latest['close'] < latest['ema'] * 0.998
+        and latest['rsi'] < 55
+        and latest['close'] < latest['ema'] * 0.999
         and vol_spike
-        and latest['adx'] > 10
+        and latest['adx'] > 8
     )
 
     if debug:
-        print(f"LONG Condition: {long_cond}, SHORT Condition: {short_cond}")
+        print(f"LONG: {long_cond}, SHORT: {short_cond}")
+        print(f"MACD: {latest['macd']:.4f}, Signal: {latest['macd_signal']:.4f}, RSI: {latest['rsi']:.2f}")
+        print(f"Vol: {latest['volume']}, Vol MA: {latest['volume_ma20']}")
+        print(f"ADX: {latest['adx']:.2f}, BB Squeeze: {bb_squeeze}")
 
     if long_cond:
-        print("✅ Signal: LONG")
         return "LONG"
     elif short_cond:
-        print("✅ Signal: SHORT")
         return "SHORT"
     else:
-        print("❌ No Signal")
         return ""
 
 def load_last_signal(symbol, interval):
