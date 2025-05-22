@@ -82,8 +82,8 @@ def enhanced_generate_signal(df):
     above_bb = latest['close'] > latest['bb_upper'] * 1.005
     below_bb = latest['close'] < latest['bb_lower'] * 0.995
 
-    long_cond = (early_macd_up or above_bb or strong_candle) and latest['rsi'] > 45 and latest['close'] > latest['ema'] * 1.005 and vol_spike and latest['adx'] > 15
-    short_cond = (early_macd_down or below_bb or strong_candle) and latest['rsi'] < 55 and latest['close'] < latest['ema'] * 0.995 and vol_spike and latest['adx'] > 15
+    long_cond = (early_macd_up or above_bb or strong_candle) and latest['rsi'] > 45 and latest['close'] > latest['ema'] * 1.005 and vol_spike and latest['adx'] > 10
+    short_cond = (early_macd_down or below_bb or strong_candle) and latest['rsi'] < 55 and latest['close'] < latest['ema'] * 0.995 and vol_spike and latest['adx'] > 10
 
     return "LONG" if long_cond else "SHORT" if short_cond else ""
 
@@ -178,3 +178,10 @@ for symbol in SYMBOLS:
             st.info(f"✅ No change for {symbol}: {signal}")
     else:
         st.info(f"⏳ Menunggu sinyal {symbol} ({INTERVAL})")
+
+st.subheader(f"📊 {symbol} - Latest Candle")
+st.write(latest[['close', 'volume', 'volume_spike', 'rsi', 'adx', 'macd', 'macd_signal', 'ema']])
+st.write(f"Signal Detected: {signal}")
+st.write(f"Candle time: {candle_time} | Last traded time: {last_trade_time}")
+
+
