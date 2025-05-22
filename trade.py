@@ -1,18 +1,23 @@
-# modules/trade.py
-
 import os
 import time
+import logging
 from binance.client import Client
 from binance.enums import *
 
+# Logging konfigurasi
+logging.basicConfig(filename='trading_log.txt', level=logging.INFO,
+                    format='%(asctime)s [%(levelname)s] %(message)s')
+
 BINANCE_API_KEY = os.getenv("BINANCE_API_KEY")
 BINANCE_API_SECRET = os.getenv("BINANCE_API_SECRET")
-
 client = Client(BINANCE_API_KEY, BINANCE_API_SECRET)
 client.FUTURES_URL = 'https://fapi.binance.com/fapi'
 
 def round_step_size(quantity, step_size):
     return round(quantity - (quantity % step_size), 8)
+
+def round_price(price, tick_size):
+    return round(round(price / tick_size) * tick_size, 8)
 
 def get_symbol_precision(symbol):
     try:
@@ -21,10 +26,11 @@ def get_symbol_precision(symbol):
             if s['symbol'] == symbol:
                 qty_precision = int(s['quantityPrecision'])
                 step_size = float([f for f in s['filters'] if f['filterType'] == 'LOT_SIZE'][0]['stepSize'])
-                return qty_precision, step_size
+                tick_size = float([f for f in s['filters'] if f['filterType'] == 'PRICE_FILTER'][0]['tickSize'])
+                return qty_precision, step_size, tick_size
     except Exception as e:
-        print(f"[ERROR] Precision fetch: {e}")
-    return 3, 0.001
+        logging.error(f"[Precision] Error: {e}")
+    return 3, 0.001, 0.01
 
 def calculate_sl_tp(entry, atr, signal, risk_ratio=2.5):
     if signal == "LONG":
@@ -40,19 +46,23 @@ def position_exists(symbol):
         positions = client.futures_position_information(symbol=symbol)
         pos = next(p for p in positions if p['symbol'] == symbol)
         return float(pos['positionAmt']) != 0
-    except:
+    except Exception as e:
+        logging.error(f"[Position] Error: {e}")
         return False
 
 def place_trade(symbol, signal, quantity, sl, tp, leverage):
     try:
         client.futures_change_leverage(symbol=symbol, leverage=leverage)
-        qty_precision, step_size = get_symbol_precision(symbol)
+        qty_precision, step_size, tick_size = get_symbol_precision(symbol)
+
         quantity = round_step_size(quantity, step_size)
+        sl = round_price(sl, tick_size)
+        tp = round_price(tp, tick_size)
 
         side = SIDE_BUY if signal == "LONG" else SIDE_SELL
         opposite = SIDE_SELL if signal == "LONG" else SIDE_BUY
 
-        print(f"\n[ENTRY] {signal} {symbol} Qty: {quantity} @ Lev {leverage}")
+        logging.info(f"[ENTRY] {signal} {symbol} Qty: {quantity} SL: {sl} TP: {tp} @Lev {leverage}")
 
         client.futures_create_order(
             symbol=symbol,
@@ -65,7 +75,7 @@ def place_trade(symbol, signal, quantity, sl, tp, leverage):
             symbol=symbol,
             side=opposite,
             type=ORDER_TYPE_LIMIT,
-            price=str(round(tp, 2)),
+            price=str(tp),
             quantity=quantity,
             timeInForce=TIME_IN_FORCE_GTC,
             reduceOnly=True
@@ -75,7 +85,7 @@ def place_trade(symbol, signal, quantity, sl, tp, leverage):
             symbol=symbol,
             side=opposite,
             type=ORDER_TYPE_STOP_MARKET,
-            stopPrice=str(round(sl, 2)),
+            stopPrice=str(sl),
             quantity=quantity,
             timeInForce=TIME_IN_FORCE_GTC,
             reduceOnly=True
@@ -84,40 +94,56 @@ def place_trade(symbol, signal, quantity, sl, tp, leverage):
         return True
 
     except Exception as e:
-        print(f"[ERROR] Trade Error: {e}")
+        logging.error(f"[Trade] Error: {e}")
         return False
 
-def execute_trade(symbol, signal, quantity, entry, leverage, atr=None, auto_switch=True, timeout=300):
-    sl, tp = calculate_sl_tp(entry, atr, signal) if atr else (entry * 0.98, entry * 1.02)
+def execute_trade_from_signal(symbol, signal_data, auto_switch=True, timeout=300):
+    """
+    Fungsi utama untuk dieksekusi dari app.py
 
+    signal_data = {
+        'signal': 'LONG' or 'SHORT',
+        'entry': float,
+        'quantity': float,
+        'leverage': int,
+        'atr': float
+    }
+    """
     if position_exists(symbol):
-        print(f"⚠️ Posisi aktif di {symbol}, tidak entry ulang.")
+        logging.info(f"[SKIP] Sudah ada posisi terbuka di {symbol}")
         return False
+
+    signal = signal_data['signal']
+    entry = signal_data['entry']
+    quantity = signal_data['quantity']
+    leverage = signal_data['leverage']
+    atr = signal_data.get('atr', None)
+
+    if atr:
+        sl, tp = calculate_sl_tp(entry, atr, signal)
+    else:
+        sl, tp = entry * 0.98, entry * 1.02
 
     success = place_trade(symbol, signal, quantity, sl, tp, leverage)
-    if not success or not auto_switch or atr is None:
+    if not success or not auto_switch or not atr:
         return success
 
     try:
-        print("🔄 Monitoring for SL trigger...")
         start_time = time.time()
+        logging.info("Monitoring SL...")
 
         while time.time() - start_time < timeout:
             price = float(client.futures_symbol_ticker(symbol=symbol)['price'])
             if (signal == "LONG" and price <= sl) or (signal == "SHORT" and price >= sl):
-                print(f"⚠️ SL Triggered. Switching to {'SHORT' if signal=='LONG' else 'LONG'}")
-
+                logging.warning(f"[SL HIT] Reversing to {'SHORT' if signal == 'LONG' else 'LONG'} at {price}")
                 new_signal = "SHORT" if signal == "LONG" else "LONG"
                 new_entry = price
                 new_sl, new_tp = calculate_sl_tp(new_entry, atr, new_signal)
-
                 place_trade(symbol, new_signal, quantity, new_sl, new_tp, leverage)
                 break
-
             time.sleep(2)
-
     except Exception as e:
-        print(f"[ERROR] Monitor SL: {e}")
+        logging.error(f"[SL Monitor] Error: {e}")
         return False
 
     return True
