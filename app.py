@@ -5,6 +5,14 @@ import pandas as pd
 import requests
 import datetime
 from binance.client import Client
+
+try:
+    balance = client.futures_account_balance()
+    print("[✅ SUCCESS] Connected to Binance Futures")
+    print("[💰 BALANCE]:", balance)
+except Exception as e:
+    print(f"[❌ ERROR] Balance check: {e}")
+    
 from twilio.rest import Client as TwilioClient
 from streamlit_autorefresh import st_autorefresh
 from ta.trend import EMAIndicator, ADXIndicator, MACD
@@ -25,13 +33,6 @@ client = Client(BINANCE_API_KEY, BINANCE_API_SECRET)
 client.FUTURES_URL = 'https://fapi.binance.com/fapi'
 
 BASE_URL = "https://api.binance.com"
-
-try:
-    balance = client.futures_account_balance()
-    print("[✅ SUCCESS] Connected to Binance Futures")
-    print("[💰 BALANCE]:", balance)
-except Exception as e:
-    print(f"[❌ ERROR] Balance check: {e}")
 
 
 # ====== Config ======
