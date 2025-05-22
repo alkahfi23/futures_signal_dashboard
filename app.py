@@ -6,12 +6,11 @@ import requests
 import datetime
 from binance.client import Client
 
-try:
-    balance = client.futures_account_balance()
-    print("[✅ SUCCESS] Connected to Binance Futures")
-    print("[💰 BALANCE]:", balance)
-except Exception as e:
-    print(f"[❌ ERROR] Balance check: {e}")
+balances = client.futures_account_balance()
+for b in balances:
+    if b['asset'] == 'USDT':
+        print(f"[💰 USDT BALANCE]: {b}")
+
     
 from twilio.rest import Client as TwilioClient
 from streamlit_autorefresh import st_autorefresh
