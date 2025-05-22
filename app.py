@@ -179,9 +179,10 @@ for symbol in SYMBOLS:
     df = get_klines(symbol, INTERVAL)
     if df.empty or df.shape[0] < 20:
         st.warning(f"Data kurang untuk {symbol}")
-        continue
+        continue  # langsung ke symbol berikutnya kalau data kurang
 
-        df = calculate_indicators(df)
+    df = calculate_indicators(df)  # pindah ke sini, supaya jalan kalau data cukup
+
     signal = enhanced_signal(df)
     latest = df.iloc[-1]
     candle_time = str(latest['open_time'])
@@ -256,6 +257,7 @@ for symbol in SYMBOLS:
     st.write(latest[['close', 'volume', 'volume_spike', 'rsi', 'adx', 'macd', 'macd_signal', 'ema']])
     st.write(f"Signal Detected: {signal}")
 
+# Sidebar time dan debug
 st.sidebar.write("⏱ Waktu sekarang:", datetime.datetime.now().strftime("%H:%M:%S"))
 debug = st.sidebar.checkbox("🔍 Debug Mode", value=False)
 if debug:
