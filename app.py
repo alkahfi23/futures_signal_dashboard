@@ -179,16 +179,11 @@ for symbol in SYMBOLS:
             symbol=symbol,
             signal=signal,
             quantity=pos_size,
-            entry=entry,
-            sl=sl,
-            tp=tp,
+            entry=entry_price,
             leverage=leverage,
             atr=latest['atr'],
             auto_switch=True
             )
-
-
- 
 
             if trade_result:
                 message = (
