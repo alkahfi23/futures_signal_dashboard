@@ -1,28 +1,31 @@
 import os
+import time
 import streamlit as st
 import pandas as pd
 import requests
-import ta
 import datetime
-import plotly.graph_objects as go
 from binance.client import Client
-from plotly.subplots import make_subplots
-from twilio.rest import Client
+from twilio.rest import Client as TwilioClient
 from streamlit_autorefresh import st_autorefresh
 from ta.trend import EMAIndicator, ADXIndicator, MACD
 from ta.momentum import RSIIndicator
 from ta.volatility import BollingerBands, AverageTrueRange
-from manrisk import calculate_position_size, calculate_risk_reward, margin_call_warning, format_risk_message
-from trade import execute_trade
 
-# === Environment Variables ===
+# ====== Environment Variables ======
+BINANCE_API_KEY = os.getenv("BINANCE_API_KEY")
+BINANCE_API_SECRET = os.getenv("BINANCE_API_SECRET")
 ACCOUNT_SID = os.getenv("TWILIO_SID")
 AUTH_TOKEN = os.getenv("TWILIO_TOKEN")
 FROM = "whatsapp:+14155238886"
 TO = os.getenv("WHATSAPP_TO")
+
+# ====== Initialize Binance Client ======
+client = Client(BINANCE_API_KEY, BINANCE_API_SECRET)
+client.FUTURES_URL = 'https://fapi.binance.com/fapi'
+
 BASE_URL = "https://api.binance.com"
 
-# === Configuration ===
+# ====== Config ======
 SYMBOLS = ["BTCUSDT"]
 INTERVAL = "1m"
 LIMIT = 100
@@ -30,6 +33,8 @@ REFRESH_INTERVAL = 55  # seconds
 account_balance = 20   # USD
 risk_pct = 50
 leverage = 100
+
+# ====== Helper Functions ======
 
 @st.cache_data(ttl=55)
 def get_klines(symbol, interval="1m", limit=100):
@@ -52,8 +57,8 @@ def send_whatsapp_message(message):
         st.warning("⚠️ Twilio credentials atau nomor tujuan belum disetel.")
         return
     try:
-        client = Client(ACCOUNT_SID, AUTH_TOKEN)
-        client.messages.create(body=message, from_=FROM, to=TO)
+        twilio_client = TwilioClient(ACCOUNT_SID, AUTH_TOKEN)
+        twilio_client.messages.create(body=message, from_=FROM, to=TO)
     except Exception as e:
         st.error(f"[ERROR] WhatsApp: {e}")
 
@@ -116,17 +121,6 @@ def enhanced_signal(df):
         return "SHORT"
     return ""
 
-def load_last_signal(symbol, interval):
-    try:
-        with open(f"last_signal_{symbol}_{interval}.txt", "r") as f:
-            return f.read().strip()
-    except:
-        return ""
-
-def save_last_signal(symbol, interval, signal):
-    with open(f"last_signal_{symbol}_{interval}.txt", "w") as f:
-        f.write(signal)
-
 def load_last_trade(symbol, interval):
     try:
         with open(f"last_trade_{symbol}_{interval}.txt", "r") as f:
@@ -138,7 +132,44 @@ def save_last_trade(symbol, interval, signal, candle_time):
     with open(f"last_trade_{symbol}_{interval}.txt", "w") as f:
         f.write(f"{signal},{candle_time}")
 
-# === Streamlit UI ===
+# Dummy risk and position size calculation functions (replace with your real ones)
+def calculate_position_size(account_balance, risk_pct, entry, sl, leverage):
+    risk_amount = account_balance * (risk_pct / 100)
+    stop_loss_distance = abs(entry - sl)
+    if stop_loss_distance == 0:
+        return 0
+    raw_pos_size = risk_amount / stop_loss_distance
+    pos_size = raw_pos_size * leverage
+    return round(pos_size, 4)
+
+def calculate_risk_reward(entry, sl, tp):
+    rr = abs(tp - entry) / abs(entry - sl)
+    return round(rr, 2)
+
+def margin_call_warning(account_balance, pos_size, entry, leverage):
+    # Dummy margin check, improve as needed
+    used_margin = (pos_size * entry) / leverage
+    margin_threshold = account_balance * 0.1
+    if used_margin > margin_threshold:
+        return True, "⚠️ Margin call risk tinggi!"
+    else:
+        return False, ""
+
+def format_risk_message(symbol, interval, entry, sl, tp, pos_size, rr, note):
+    msg = (
+        f"Signal: {symbol} {interval}\n"
+        f"Entry: {entry:.2f}\nSL: {sl:.2f}\nTP: {tp:.2f}\n"
+        f"Position Size: {pos_size:.4f}\nRR: {rr}\n{note}"
+    )
+    return msg
+
+# Trade execution (simplified)
+def execute_trade(symbol, signal, quantity, entry, leverage, atr=None, auto_switch=True, timeout=300):
+    # Place your real order code here
+    print(f"[EXECUTE TRADE] {signal} {symbol} Qty: {quantity} Entry: {entry} Leverage: {leverage}")
+    return True
+
+# ====== Streamlit UI ======
 st.set_page_config(page_title="Futures Signal Dashboard", layout="wide")
 st.title("🚀 Futures Signal Dashboard - 1 Minute")
 st_autorefresh(interval=REFRESH_INTERVAL * 1000, key="refresh")
@@ -146,21 +177,21 @@ st_autorefresh(interval=REFRESH_INTERVAL * 1000, key="refresh")
 for symbol in SYMBOLS:
     df = get_klines(symbol, INTERVAL)
     if df.empty or df.shape[0] < 20:
+        st.warning(f"Data kurang untuk {symbol}")
         continue
 
     df = calculate_indicators(df)
     signal = enhanced_signal(df)
     latest = df.iloc[-1]
-    entry = latest['close']
     candle_time = str(latest['open_time'])
 
     if signal:
-        # Cek apakah trade sudah dilakukan pada candle ini
         last_trade_signal, last_trade_time = load_last_trade(symbol, INTERVAL)
         if signal == last_trade_signal and candle_time == last_trade_time:
             st.warning(f"⛔ Duplikat trade {signal} {symbol} - dilewati")
             continue
 
+        entry = latest['close']
         sl = tp = None
         if signal == "LONG":
             sl = entry - latest['atr'] * 1.5
@@ -169,56 +200,11 @@ for symbol in SYMBOLS:
             sl = entry + latest['atr'] * 1.5
             tp = entry - latest['atr'] * 2.5
 
-        if sl and tp:
-            pos_size = calculate_position_size(account_balance, risk_pct, entry, sl, leverage)
-            rrr = calculate_risk_reward(entry, sl, tp)
-            is_margin_risk, margin_note = margin_call_warning(account_balance, pos_size, entry, leverage)
-            risk_msg = format_risk_message(symbol, INTERVAL, entry, sl, tp, pos_size, rrr, margin_note)
-            send_whatsapp_message(risk_msg)
+        pos_size = calculate_position_size(account_balance, risk_pct, entry, sl, leverage)
+        rrr = calculate_risk_reward(entry, sl, tp)
+        is_margin_risk, margin_note = margin_call_warning(account_balance, pos_size, entry, leverage)
+        risk_msg = format_risk_message(symbol, INTERVAL, entry, sl, tp, pos_size, rrr, margin_note)
+        send_whatsapp_message(risk_msg)
 
-            entry = float(client.futures_symbol_ticker(symbol=symbol)['price'])
-            trade_result = execute_trade(
-            symbol=symbol,
-            signal=signal,
-            quantity=pos_size,
-            entry=entry,
-            leverage=leverage,
-            atr=latest['atr'],  # boleh None kalau gak ada ATR
-            auto_switch=True
-            )
-
-            if trade_result:
-                message = (
-                    f"✅ TRADE EXECUTED:\n"
-                    f"Pair: {symbol}\n"
-                    f"Posisi: {signal}\n"
-                    f"Entry: {entry:.2f}\n"
-                    f"SL: {sl:.2f}\n"
-                    f"TP: {tp:.2f}\n"
-                    f"Qty: {pos_size:.4f}"
-                )
-                st.success(message.replace("\n", " | "))
-                send_whatsapp_message(message)
-
-                # Simpan status trade terakhir
-                save_last_trade(symbol, INTERVAL, signal, candle_time)
-
-        last_signal = load_last_signal(symbol, INTERVAL)
-        if signal != last_signal:
-            st.success(f"📢 New signal {signal} for {symbol}!")
-            send_whatsapp_message(f"📢 Signal {signal} untuk {symbol}!")
-            save_last_signal(symbol, INTERVAL, signal)
-        else:
-            st.info(f"✅ No change for {symbol}: {signal}")
-    else:
-        st.info(f"⏳ Menunggu sinyal {symbol} ({INTERVAL})")
-
-st.subheader(f"📊 {symbol} - Latest Candle")
-st.write(latest[['close', 'volume', 'volume_spike', 'rsi', 'adx', 'macd', 'macd_signal', 'ema']])
-st.write(f"Signal Detected: {signal}")
-st.sidebar.write("⏱ Waktu sekarang:", datetime.datetime.now().strftime("%H:%M:%S"))
-debug = st.sidebar.checkbox("🔍 Debug Mode", value=False)
-if debug:
-    st.write("====== DEBUG: ENHANCED SIGNAL CHECK ======")
-    st.write(f"CLOSE: {latest['close']}, OPEN: {latest['open']}")
-
+        try:
+            entry_realtime = float(client.futures_symbol_t
