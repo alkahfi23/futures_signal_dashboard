@@ -120,8 +120,8 @@ def enhanced_generate_signal(df):
         latest['adx'] > 15
     )
 # === Risk Management Section ===
-account_balance = 1000  # Ganti sesuai real account balance kamu
-risk_pct = 1
+account_balance = 20 # Ganti sesuai real account balance kamu
+risk_pct = 50
 leverage = 10
 
 entry = latest['close']
