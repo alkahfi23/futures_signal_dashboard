@@ -13,6 +13,8 @@ from ta.volatility import BollingerBands, AverageTrueRange
 from twilio.rest import Client
 from streamlit_autorefresh import st_autorefresh
 from manrisk import calculate_position_size, calculate_risk_reward, margin_call_warning, format_risk_message
+from trade import execute_trade, calculate_quantity
+
 
 # === Configuration ===
 ACCOUNT_SID = os.getenv("TWILIO_SID")
