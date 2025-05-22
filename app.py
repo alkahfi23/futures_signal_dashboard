@@ -167,7 +167,7 @@ for symbol in SYMBOLS:
         risk_msg = format_risk_message(symbol, INTERVAL, entry, sl, tp, pos_size, rrr, margin_note)
         st.info(risk_msg)
 
-                try:
+            try:
             entry_realtime = float(client.futures_mark_price(symbol=symbol)['markPrice'])
         except Exception as e:
             st.warning(f"⚠️ Gagal ambil harga realtime Binance: {e}")
@@ -210,9 +210,7 @@ for symbol in SYMBOLS:
 
         # ✅ Hanya eksekusi jika tombol ditekan
         if st.button(f"🚨 Eksekusi Trade {symbol} ({signal})"):
-            safe_execute_trade_and_notify()
-
-
+        safe_execute_trade_and_notify()
 
     st.subheader(f"📊 {symbol} - Latest Candle")
     st.write(latest[['close', 'volume', 'volume_spike', 'rsi', 'adx', 'macd', 'macd_signal', 'ema']])
