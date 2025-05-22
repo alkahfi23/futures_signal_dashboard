@@ -175,7 +175,7 @@ for symbol in SYMBOLS:
             risk_msg = format_risk_message(symbol, INTERVAL, entry, sl, tp, pos_size, rrr, margin_note)
             send_whatsapp_message(risk_msg)
 
-            trade_result = execute_trade(
+            trade_result = execute_trade_from_signal(
                 symbol, signal, pos_size, sl, tp, leverage,
                 auto_switch=True,
                 atr=latest['atr']
