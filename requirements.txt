@@ -5,3 +5,4 @@ ta
 plotly
 twilio
 streamlit_autorefresh
+python-binance
