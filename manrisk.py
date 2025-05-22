@@ -44,3 +44,17 @@ def calculate_trailing_stop(entry_price, current_price, atr, direction="long", f
     else:
         trailing_stop = min(entry_price, current_price + atr * factor)
     return trailing_stop
+
+def format_risk_message(symbol, interval, entry, sl, tp, pos_size, rrr, margin_note):
+    """
+    Format pesan WhatsApp untuk notifikasi manajemen risiko.
+    """
+    message = (
+        f"⚠️ Risk Alert {symbol} ({interval})\n\n"
+        f"Entry: {entry:.2f}\n"
+        f"SL: {sl:.2f} | TP: {tp:.2f}\n"
+        f"Pos Size: {pos_size:.3f} Contracts\n"
+        f"RRR: {rrr:.2f}\n"
+        f"{margin_note}"
+    )
+    return message
