@@ -175,13 +175,14 @@ for symbol in SYMBOLS:
             risk_msg = format_risk_message(symbol, INTERVAL, entry, sl, tp, pos_size, rrr, margin_note)
             send_whatsapp_message(risk_msg)
 
+            entry = float(client.futures_symbol_ticker(symbol=symbol)['price'])
             trade_result = execute_trade(
             symbol=symbol,
             signal=signal,
             quantity=pos_size,
-            entry=entry_price,
+            entry=entry,
             leverage=leverage,
-            atr=latest['atr'],
+            atr=latest['atr'],  # boleh None kalau gak ada ATR
             auto_switch=True
             )
 
