@@ -190,11 +190,22 @@ for symbol in SYMBOLS:
             tp = entry - latest['atr'] * 2.5
 
         if sl and tp:
-            pos_size = calculate_position_size(account_balance, risk_pct, entry, sl, leverage)
-            rrr = calculate_risk_reward(entry, sl, tp)
-            is_margin_risk, margin_note = margin_call_warning(account_balance, pos_size, entry, leverage)
-            risk_msg = format_risk_message(symbol, INTERVAL, entry, sl, tp, pos_size, rrr, margin_note)
-            send_whatsapp_message(risk_msg)
+        pos_size = calculate_position_size(account_balance, risk_pct, entry, sl, leverage)
+        rrr = calculate_risk_reward(entry, sl, tp)
+        is_margin_risk, margin_note = margin_call_warning(account_balance, pos_size, entry, leverage)
+        risk_msg = format_risk_message(symbol, INTERVAL, entry, sl, tp, pos_size, rrr, margin_note)
+        send_whatsapp_message(risk_msg)
+
+        # ✅ Eksekusi trade ke Binance
+        qty = calculate_quantity(account_balance, risk_pct, entry, sl, leverage)
+        execute_trade(
+        symbol=symbol,
+        direction=signal,
+        quantity=qty,
+        sl_price=sl,
+        tp_price=tp,
+        leverage=leverage
+        )
 
         last_signal = load_last_signal(symbol, INTERVAL)
         if signal != last_signal:
