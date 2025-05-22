@@ -206,5 +206,47 @@ for symbol in SYMBOLS:
         risk_msg = format_risk_message(symbol, INTERVAL, entry, sl, tp, pos_size, rrr, margin_note)
         send_whatsapp_message(risk_msg)
 
-        try:
-            entry_realtime = float(client.futures_symbol_t
+                try:
+            entry_realtime = float(client.futures_symbol_ticker(symbol=symbol)['price'])
+        except Exception as e:
+            st.warning(f"⚠️ Gagal dapatkan harga realtime: {e}")
+            entry_realtime = entry  # fallback ke harga close terakhir
+
+        trade_result = execute_trade(
+            symbol=symbol,
+            signal=signal,
+            quantity=pos_size,
+            entry=entry_realtime,
+            leverage=leverage,
+            atr=latest['atr'],  # bisa None kalau gak ada ATR
+            auto_switch=True
+        )
+
+        if trade_result:
+            message = (
+                f"✅ TRADE EXECUTED:\n"
+                f"Pair: {symbol}\n"
+                f"Posisi: {signal}\n"
+                f"Entry: {entry_realtime:.2f}\n"
+                f"SL: {sl:.2f}\n"
+                f"TP: {tp:.2f}\n"
+                f"Qty: {pos_size:.4f}"
+            )
+            st.success(message.replace("\n", " | "))
+            send_whatsapp_message(message)
+
+            # Simpan status trade terakhir
+            save_last_trade(symbol, INTERVAL, signal, candle_time)
+
+    else:
+        st.info(f"⏳ Menunggu sinyal {symbol} ({INTERVAL})")
+
+    st.subheader(f"📊 {symbol} - Latest Candle")
+    st.write(latest[['close', 'volume', 'volume_spike', 'rsi', 'adx', 'macd', 'macd_signal', 'ema']])
+    st.write(f"Signal Detected: {signal}")
+
+st.sidebar.write("⏱ Waktu sekarang:", datetime.datetime.now().strftime("%H:%M:%S"))
+debug = st.sidebar.checkbox("🔍 Debug Mode", value=False)
+if debug:
+    st.write("====== DEBUG: ENHANCED SIGNAL CHECK ======")
+    st.write(f"CLOSE: {latest['close']}, OPEN: {latest['open']}")
