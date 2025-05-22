@@ -5,6 +5,7 @@ import requests
 import ta
 import datetime
 import plotly.graph_objects as go
+from binance.client import Client
 from plotly.subplots import make_subplots
 from twilio.rest import Client
 from streamlit_autorefresh import st_autorefresh
