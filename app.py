@@ -26,6 +26,14 @@ client.FUTURES_URL = 'https://fapi.binance.com/fapi'
 
 BASE_URL = "https://api.binance.com"
 
+try:
+    balance = client.futures_account_balance()
+    print("[✅ SUCCESS] Connected to Binance Futures")
+    print("[💰 BALANCE]:", balance)
+except Exception as e:
+    print(f"[❌ ERROR] Balance check: {e}")
+
+
 # ====== Config ======
 SYMBOLS = ["BTCUSDT"]
 INTERVAL = "1m"
