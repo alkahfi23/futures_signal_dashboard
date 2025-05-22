@@ -181,12 +181,12 @@ for symbol in SYMBOLS:
         st.warning(f"Data kurang untuk {symbol}")
         continue
 
-    df = calculate_indicators(df)
+        df = calculate_indicators(df)
     signal = enhanced_signal(df)
     latest = df.iloc[-1]
     candle_time = str(latest['open_time'])
 
-        if signal:
+    if signal:
         last_trade_signal, last_trade_time = load_last_trade(symbol, INTERVAL)
         if signal == last_trade_signal and candle_time == last_trade_time:
             st.warning(f"⛔ Duplikat trade {signal} {symbol} - dilewati")
@@ -213,7 +213,7 @@ for symbol in SYMBOLS:
             st.warning(f"⚠️ Gagal ambil harga realtime Binance: {e}")
             entry_realtime = entry
 
-        def safe_execute_trade_and_notify(symbol, signal, pos_size, entry_realtime, leverage, latest, sl, tp, INTERVAL, candle_time):
+        def safe_execute_trade_and_notify():
             try:
                 trade_result = execute_trade(
                     symbol=symbol,
@@ -250,18 +250,7 @@ for symbol in SYMBOLS:
                 with open("log_trading.txt", "a") as f:
                     f.write(f"{datetime.datetime.now()} | ERROR | {error_message}\n")
 
-        safe_execute_trade_and_notify(
-            symbol=symbol,
-            signal=signal,
-            pos_size=pos_size,
-            entry_realtime=entry_realtime,
-            leverage=leverage,
-            latest=latest,
-            sl=sl,
-            tp=tp,
-            INTERVAL=INTERVAL,
-            candle_time=candle_time
-        )
+        safe_execute_trade_and_notify()
 
     st.subheader(f"📊 {symbol} - Latest Candle")
     st.write(latest[['close', 'volume', 'volume_spike', 'rsi', 'adx', 'macd', 'macd_signal', 'ema']])
