@@ -75,17 +75,33 @@ def enhanced_generate_signal(df):
     latest = df.iloc[-1]
     if pd.isna(latest['ema']) or pd.isna(latest['rsi']) or pd.isna(latest['macd']) or pd.isna(latest['macd_signal']):
         return ""
-    vol_spike = latest['volume_spike']
-    strong_candle = abs(latest['close'] - latest['open']) > 0.6 * (latest['high'] - latest['low'])
+
+    vol_spike = latest['volume'] > latest['volume_ma20'] * 1.5
+    strong_candle = abs(latest['close'] - latest['open']) > 0.5 * (latest['high'] - latest['low'])
+
     early_macd_up = df['macd'].iloc[-2] < df['macd_signal'].iloc[-2] and latest['macd'] > latest['macd_signal']
     early_macd_down = df['macd'].iloc[-2] > df['macd_signal'].iloc[-2] and latest['macd'] < latest['macd_signal']
-    above_bb = latest['close'] > latest['bb_upper'] * 1.005
-    below_bb = latest['close'] < latest['bb_lower'] * 0.995
 
-    long_cond = (early_macd_up or above_bb or strong_candle) and latest['rsi'] > 45 and latest['close'] > latest['ema'] * 1.005 and vol_spike and latest['adx'] > 10
-    short_cond = (early_macd_down or below_bb or strong_candle) and latest['rsi'] < 55 and latest['close'] < latest['ema'] * 0.995 and vol_spike and latest['adx'] > 10
+    above_bb = latest['close'] > latest['bb_upper'] * 1.002
+    below_bb = latest['close'] < latest['bb_lower'] * 0.998
+
+    long_cond = (
+        (early_macd_up or above_bb or strong_candle)
+        and latest['rsi'] > 40
+        and latest['close'] > latest['ema'] * 1.002
+        and vol_spike
+        and latest['adx'] > 7
+    )
+    short_cond = (
+        (early_macd_down or below_bb or strong_candle)
+        and latest['rsi'] < 60
+        and latest['close'] < latest['ema'] * 0.998
+        and vol_spike
+        and latest['adx'] > 7
+    )
 
     return "LONG" if long_cond else "SHORT" if short_cond else ""
+
 
 def load_last_signal(symbol, interval):
     try:
@@ -182,6 +198,5 @@ for symbol in SYMBOLS:
 st.subheader(f"📊 {symbol} - Latest Candle")
 st.write(latest[['close', 'volume', 'volume_spike', 'rsi', 'adx', 'macd', 'macd_signal', 'ema']])
 st.write(f"Signal Detected: {signal}")
-st.write(f"Candle time: {candle_time} | Last traded time: {last_trade_time}")
 
 
