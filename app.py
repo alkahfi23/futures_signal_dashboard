@@ -119,6 +119,8 @@ def enhanced_generate_signal(df):
         vol_spike and
         latest['adx'] > 15
     )
+    return ""
+    
 # === Risk Management Section ===
 account_balance = 20 # Ganti sesuai real account balance kamu
 risk_pct = 50
@@ -136,7 +138,7 @@ elif "SHORT" in signal:
 else:
     sl = tp = direction = None
 
-return ""
+
 
 if sl and tp:
     pos_size = calculate_position_size(account_balance, risk_pct, entry, sl, leverage)
