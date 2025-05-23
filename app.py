@@ -110,7 +110,7 @@ for symbol in SYMBOLS:
     entry = latest["close"]
     candle_time = str(latest["open_time"])
 
-        if signal and not position_exists(client, symbol, signal):
+    if signal and not position_exists(client, symbol, signal):  # <== INI HARUS SETINGKAT DENGAN YANG ATAS
         sl = entry - latest['atr'] * 1.5 if signal == "LONG" else entry + latest['atr'] * 1.5
         tp = entry + latest['atr'] * 2.5 if signal == "LONG" else entry - latest['atr'] * 2.5
         pos_size = calculate_position_size(account_balance, risk_pct, entry, sl, leverage)
@@ -122,7 +122,7 @@ for symbol in SYMBOLS:
         st.info(f"{symbol} Signal: {signal} | Entry: {entry:.2f} | SL: {sl:.2f} | TP: {tp:.2f} | PosSize: {pos_size} | {note}")
 
         try:
-            trailing_stop_callback_rate = 1.0  # Misalnya 1%, bisa disesuaikan
+            trailing_stop_callback_rate = 1.0
 
             result = execute_trade(
                 symbol=symbol,
@@ -141,6 +141,9 @@ for symbol in SYMBOLS:
                 st.error(f"❌ Order gagal {symbol}")
         except Exception as e:
             st.error(f"❌ Error eksekusi trade: {e}")
+    else:
+        st.write(f"ℹ️ {symbol}: Tidak ada sinyal baru atau posisi sudah terbuka.")
+
     else:
         st.write(f"ℹ️ {symbol}: Tidak ada sinyal baru atau posisi sudah terbuka.")
 
