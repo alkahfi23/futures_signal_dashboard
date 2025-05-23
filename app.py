@@ -21,9 +21,9 @@ SYMBOLS = ["BTCUSDT"]
 INTERVAL = "1m"
 LIMIT = 100
 REFRESH_INTERVAL = 55
-account_balance = 20
-risk_pct = 10
-leverage = 50
+account_balance = 18
+risk_pct = 5
+leverage = 100
 MIN_QTY = 0.001
 
 # ====== Helpers ======
