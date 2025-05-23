@@ -170,7 +170,7 @@ for symbol in SYMBOLS:
                 quantity=pos_size,
                 entry_price=entry_realtime,
                 leverage=leverage,
-                risk_pct=risk_pct
+                risk_pct=risk_pct,
                 position_side=signal
             )
             if result:
