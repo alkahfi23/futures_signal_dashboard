@@ -162,7 +162,7 @@ for symbol in SYMBOLS:
             st.warning(f"⚠️ Gagal ambil harga realtime: {e}")
             entry_realtime = entry
 
-        result = execute_trade(symbol, signal, pos_size, entry_realtime, leverage)
+        result = execute_trade(symbol, signal, pos_size, entry_realtime, leverage, risk_pct)
         if result:
             st.success(f"✅ Trade berhasil: {symbol} ({signal})")
             save_last_trade(symbol, INTERVAL, signal, candle_time)
