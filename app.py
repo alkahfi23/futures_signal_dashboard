@@ -9,7 +9,7 @@ from streamlit_autorefresh import st_autorefresh
 from ta.trend import EMAIndicator, ADXIndicator, MACD
 from ta.momentum import RSIIndicator
 from ta.volatility import BollingerBands, AverageTrueRange
-from trade import execute_trade  # Import dari modul trade.py
+from trade import execute_trade, get_quantity_precision  # Update impor
 
 # ====== Initialize Binance Client ======
 client = Client(os.getenv("BINANCE_API_KEY"), os.getenv("BINANCE_API_SECRET"))
@@ -25,6 +25,7 @@ account_balance = 20  # USD
 risk_pct = 10
 leverage = 50
 MIN_QTY = 0.001
+POSITION_SIDE = "BOTH"  # Ubah ke "LONG"/"SHORT" jika pakai hedge mode
 
 # ====== Helper Functions ======
 @st.cache_data(ttl=55)
@@ -118,7 +119,7 @@ def margin_call_warning(account_balance, pos_size, entry, leverage):
 
 # ====== Streamlit UI ======
 st.set_page_config(page_title="Futures Signal Dashboard", layout="wide")
-st.title("🚀 Futures Signal Dashboard - 1 Minute")
+st.title("\U0001F680 Futures Signal Dashboard - 1 Minute")
 st_autorefresh(interval=REFRESH_INTERVAL * 1000, key="refresh")
 
 for symbol in SYMBOLS:
@@ -163,16 +164,18 @@ for symbol in SYMBOLS:
             entry_realtime = entry
 
         try:
-            result = execute_trade(
-    symbol=symbol,
-    side=signal,
-    quantity=pos_size,
-    entry_price=entry_realtime,
-    leverage=leverage,
-    risk_pct=risk_pct,
-    position_side=signal  # "LONG" atau "SHORT"
-)
+            precision = get_quantity_precision(symbol)
+            pos_size = round(pos_size, precision)
 
+            result = execute_trade(
+                symbol=symbol,
+                side=signal,
+                quantity=pos_size,
+                entry_price=entry_realtime,
+                leverage=leverage,
+                risk_pct=risk_pct,
+                position_side=signal.upper()  # LONG or SHORT
+            )
             if result:
                 st.success(f"✅ Trade berhasil: {symbol} ({signal})")
                 save_last_trade(symbol, INTERVAL, signal, candle_time)
