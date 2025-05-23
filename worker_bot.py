@@ -13,7 +13,7 @@ INTERVAL = "1m"
 LIMIT = 100
 
 account_balance = 18
-risk_pct = 10
+risk_pct = 70
 leverage = 200
 MIN_QTY = 0.001
 
