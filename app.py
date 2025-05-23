@@ -184,13 +184,14 @@ for symbol in SYMBOLS:
         st.info(risk_msg)
 
         try:
-    entry_realtime = float(client.futures_mark_price(symbol=symbol)['markPrice'])
-except Exception as e:
-    st.warning(f"⚠️ Gagal ambil harga realtime Binance: {e}")
-    entry_realtime = entry
+        entry_realtime = float(client.futures_mark_price(symbol=symbol)['markPrice'])
+        except Exception as e:
+        st.warning(f"⚠️ Gagal ambil harga realtime Binance: {e}")
+        entry_realtime = entry  # fallback to previous close
 
-def safe_execute_trade_and_notify():
-    try:
+        # Pastikan ini DILUAR blok try/except
+        def safe_execute_trade_and_notify():
+        try:
         trade_result = execute_trade(
             symbol=symbol,
             signal=signal,
@@ -199,7 +200,7 @@ def safe_execute_trade_and_notify():
             leverage=leverage,
             atr=latest['atr'],
             auto_switch=True
-        )
+            )
         if trade_result:
             st.success(f"✅ Trade berhasil dieksekusi untuk {symbol} ({signal})")
             save_last_trade(symbol, INTERVAL, signal, candle_time)
@@ -208,7 +209,7 @@ def safe_execute_trade_and_notify():
     except Exception as e:
         st.error(f"[❌] Gagal eksekusi trade: {e}")
 
-# ✅ Jalankan fungsi hanya SEKALI
+# Jalankan fungsi
 safe_execute_trade_and_notify()
 
            
