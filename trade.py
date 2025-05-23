@@ -1,6 +1,6 @@
+import os
 from binance.client import Client
 from binance.exceptions import BinanceAPIException
-import os
 
 client = Client(os.getenv("BINANCE_API_KEY"), os.getenv("BINANCE_API_SECRET"))
 client.FUTURES_URL = 'https://fapi.binance.com/fapi'
@@ -39,10 +39,36 @@ def position_exists(client, symbol, side):
         print(f"[❌ POSITION CHECK ERROR] {e}")
         return False
 
+# ====== Close Posisi Lawan ======
+def close_opposite_position(symbol, current_signal):
+    try:
+        positions = client.futures_position_information(symbol=symbol)
+        for p in positions:
+            pos_amt = float(p['positionAmt'])
+            if pos_amt == 0:
+                continue
+            pos_side = "LONG" if pos_amt > 0 else "SHORT"
+            if pos_side != current_signal:
+                quantity = abs(pos_amt)
+                order_side = "SELL" if pos_side == "LONG" else "BUY"
+                client.futures_create_order(
+                    symbol=symbol,
+                    side=order_side,
+                    type="MARKET",
+                    quantity=adjust_quantity(symbol, quantity),
+                    reduceOnly=True
+                )
+                print(f"[✅ CLOSED OPPOSITE] {symbol} {pos_side} {quantity}")
+    except Exception as e:
+        print(f"[❌ CLOSE OPPOSITE ERROR] {e}")
+
 # ====== Eksekusi Order dengan SL dan TP ======
 def execute_trade(symbol, side, quantity, entry_price, leverage, position_side="BOTH",
                   sl_price=None, tp_price=None, trailing_stop_callback_rate=None):
     try:
+        # Auto close posisi lawan
+        close_opposite_position(symbol, side)
+
         # Set leverage
         client.futures_change_leverage(symbol=symbol, leverage=leverage)
 
