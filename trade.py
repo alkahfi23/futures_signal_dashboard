@@ -30,8 +30,19 @@ def adjust_quantity(symbol, quantity):
 # Fungsi utama untuk eksekusi trade
 def execute_trade(symbol, side, quantity, entry_price, leverage, risk_pct, position_side="BOTH"):
     try:
+        # Cek saldo USDT terlebih dahulu
+        balance = client.futures_account_balance()
+        usdt_balance = float([b for b in balance if b['asset'] == 'USDT'][0]['balance'])
+
         # Set leverage dulu
         client.futures_change_leverage(symbol=symbol, leverage=leverage)
+
+        # Hitung nilai posisi maksimum berdasarkan risiko dan leverage
+        max_position_value = usdt_balance * (risk_pct / 100) * leverage
+        max_quantity = max_position_value / entry_price
+
+        # Gunakan quantity minimum antara input dan yang dihitung
+        quantity = min(quantity, max_quantity)
 
         # Atur posisi long/short berdasarkan hedge mode
         order_side = "BUY" if side == "LONG" else "SELL"
