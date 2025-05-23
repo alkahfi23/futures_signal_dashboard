@@ -2,20 +2,27 @@ import os
 import time
 import requests
 import pandas as pd
-from trade import execute_trade, position_exists, close_opposite_position
+from trade import execute_trade, position_exists, close_opposite_position, adjust_quantity
 from ta.trend import EMAIndicator, ADXIndicator, MACD
 from ta.momentum import RSIIndicator
 from ta.volatility import BollingerBands, AverageTrueRange
+from binance.client import Client
 
+# Binance config
+client = Client(os.getenv("BINANCE_API_KEY"), os.getenv("BINANCE_API_SECRET"))
+
+# Constants
 BASE_URL = "https://api.binance.com"
 SYMBOLS = ["BTCUSDT"]
 INTERVAL = "1m"
 LIMIT = 100
 
-account_balance = 18
+account_balance = 17
 risk_pct = 5
 leverage = 200
 MIN_QTY = 0.001
+
+# Get Klines
 
 def get_klines(symbol, interval, limit):
     url = f"{BASE_URL}/api/v3/klines?symbol={symbol}&interval={interval}&limit={limit}"
@@ -28,6 +35,8 @@ def get_klines(symbol, interval, limit):
     df['open_time'] = pd.to_datetime(df['open_time'], unit='ms')
     df[['open', 'high', 'low', 'close', 'volume']] = df[['open', 'high', 'low', 'close', 'volume']].astype(float)
     return df
+
+# Indicators
 
 def calculate_indicators(df):
     df['ema'] = EMAIndicator(df['close'], window=20).ema_indicator()
@@ -42,6 +51,8 @@ def calculate_indicators(df):
     atr = AverageTrueRange(df['high'], df['low'], df['close'], window=14)
     df['atr'] = atr.average_true_range()
     return df
+
+# Signal logic
 
 def enhanced_signal(df):
     latest, prev = df.iloc[-1], df.iloc[-2]
@@ -65,12 +76,16 @@ def enhanced_signal(df):
     if score_short >= 3: return "SHORT"
     return ""
 
+# Position Size Calculation
+
 def calculate_position_size(balance, risk_pct, entry, sl, leverage):
     risk_amt = balance * (risk_pct / 100)
     sl_distance = abs(entry - sl)
     if sl_distance == 0: return 0
     raw_size = (risk_amt / sl_distance) * leverage
-    return round(raw_size, 3)
+    return round(raw_size, 6)
+
+# Margin Warning
 
 def margin_warning(balance, pos_size, entry, leverage):
     margin_used = (pos_size * entry) / leverage
@@ -79,6 +94,26 @@ def margin_warning(balance, pos_size, entry, leverage):
     elif margin_used > balance * 0.9:
         return True, "⚠️ Margin call risk tinggi!"
     return False, ""
+
+# Notional Check
+
+def get_symbol_filters(symbol):
+    info = client.futures_exchange_info()
+    for s in info['symbols']:
+        if s['symbol'] == symbol:
+            filters = {}
+            for f in s['filters']:
+                filters[f['filterType']] = f
+            return filters
+    return {}
+
+def is_notional_valid(symbol, qty, price):
+    filters = get_symbol_filters(symbol)
+    min_notional = float(filters.get("MIN_NOTIONAL", {}).get("notional", 5.0))
+    notional = qty * price
+    return notional >= min_notional
+
+# Main Loop
 
 def main_loop():
     while True:
@@ -98,9 +133,14 @@ def main_loop():
                     sl = entry - latest['atr'] * 1.5 if signal == "LONG" else entry + latest['atr'] * 1.5
                     tp = entry + latest['atr'] * 2.5 if signal == "LONG" else entry - latest['atr'] * 2.5
                     pos_size = calculate_position_size(account_balance, risk_pct, entry, sl, leverage)
+                    pos_size = adjust_quantity(symbol, pos_size)
 
                     if pos_size < MIN_QTY:
-                        print(f"⛔ Ukuran posisi terlalu kecil untuk {symbol}")
+                        print(f"⛔ Ukuran posisi terlalu kecil untuk {symbol} (adjusted: {pos_size})")
+                        continue
+
+                    if not is_notional_valid(symbol, pos_size, entry):
+                        print(f"⛔ Notional terlalu kecil: {pos_size * entry:.2f} < min")
                         continue
 
                     is_margin_risk, note = margin_warning(account_balance, pos_size, entry, leverage)
@@ -108,7 +148,6 @@ def main_loop():
                         print(note)
                         continue
 
-                    # Close posisi lawan dulu sebelum open posisi baru
                     close_opposite_position(symbol, signal)
 
                     result = execute_trade(
