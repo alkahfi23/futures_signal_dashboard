@@ -147,14 +147,13 @@ def execute_trade(symbol, side, quantity, entry_price, leverage, risk_pct, posit
         # Tentukan arah order
         order_side = "BUY" if side == "LONG" else "SELL"
 
-        # Buat order market
+        # Buat order market tanpa reduceOnly
         order = client.futures_create_order(
             symbol=symbol,
             side=order_side,
             type="MARKET",
             quantity=quantity,
-            positionSide=position_side.upper(),  # Misalnya: "LONG" atau "SHORT"
-            reduceOnly=False
+            positionSide=position_side.upper()  # "LONG" atau "SHORT"
         )
         return order
     except Exception as e:
