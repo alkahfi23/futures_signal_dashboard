@@ -22,8 +22,8 @@ INTERVAL = "1m"
 LIMIT = 100
 REFRESH_INTERVAL = 55
 account_balance = 18
-risk_pct = 25
-leverage = 125
+risk_pct = 30
+leverage = 100
 MIN_QTY = 0.001
 
 # ====== Helpers ======
