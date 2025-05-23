@@ -9,7 +9,7 @@ from streamlit_autorefresh import st_autorefresh
 from ta.trend import EMAIndicator, ADXIndicator, MACD
 from ta.momentum import RSIIndicator
 from ta.volatility import BollingerBands, AverageTrueRange
-from trade import execute_trade, get_quantity_precision  # Update impor
+from trade import execute_trade  # Import dari modul trade.py
 
 # ====== Initialize Binance Client ======
 client = Client(os.getenv("BINANCE_API_KEY"), os.getenv("BINANCE_API_SECRET"))
@@ -25,7 +25,6 @@ account_balance = 20  # USD
 risk_pct = 10
 leverage = 50
 MIN_QTY = 0.001
-POSITION_SIDE = "BOTH"  # Ubah ke "LONG"/"SHORT" jika pakai hedge mode
 
 # ====== Helper Functions ======
 @st.cache_data(ttl=55)
@@ -103,7 +102,7 @@ def calculate_position_size(account_balance, risk_pct, entry, sl, leverage):
         return 0
     raw_pos_size = risk_amount / stop_loss_distance
     pos_size = raw_pos_size * leverage
-    return round(pos_size, 4)
+    return round(pos_size, 3)  # disesuaikan untuk precision USDT/BTC
 
 def calculate_risk_reward(entry, sl, tp):
     rr = abs(tp - entry) / abs(entry - sl)
@@ -119,7 +118,7 @@ def margin_call_warning(account_balance, pos_size, entry, leverage):
 
 # ====== Streamlit UI ======
 st.set_page_config(page_title="Futures Signal Dashboard", layout="wide")
-st.title("\U0001F680 Futures Signal Dashboard - 1 Minute")
+st.title("🚀 Futures Signal Dashboard - 1 Minute")
 st_autorefresh(interval=REFRESH_INTERVAL * 1000, key="refresh")
 
 for symbol in SYMBOLS:
@@ -164,17 +163,14 @@ for symbol in SYMBOLS:
             entry_realtime = entry
 
         try:
-            precision = get_quantity_precision(symbol)
-            pos_size = round(pos_size, precision)
-
+            # Pemanggilan fungsi trade sudah disesuaikan
             result = execute_trade(
                 symbol=symbol,
                 side=signal,
                 quantity=pos_size,
                 entry_price=entry_realtime,
                 leverage=leverage,
-                risk_pct=risk_pct,
-                position_side=signal.upper()  # LONG or SHORT
+                position_side=signal
             )
             if result:
                 st.success(f"✅ Trade berhasil: {symbol} ({signal})")
