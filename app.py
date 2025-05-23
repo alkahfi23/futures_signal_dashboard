@@ -21,7 +21,7 @@ INTERVAL = "1m"
 LIMIT = 100
 REFRESH_INTERVAL = 55  # seconds
 account_balance = 20  # USD
-risk_pct = 20
+risk_pct = 10
 leverage = 100
 
 # ====== Helper Functions ======
@@ -123,8 +123,29 @@ def format_risk_message(symbol, interval, entry, sl, tp, pos_size, rr, note):
     )
 
 def execute_trade(symbol, signal, quantity, entry, leverage, atr=None, auto_switch=True, timeout=300):
-    print(f"[EXECUTE TRADE] {signal} {symbol} Qty: {quantity} Entry: {entry} Leverage: {leverage}")
-    return True  # Simulasi berhasil
+    try:
+        # Set leverage terlebih dahulu
+        client.futures_change_leverage(symbol=symbol, leverage=leverage)
+
+        # Set margin type ke ISOLATED (atau CROSS jika ingin)
+        try:
+            client.futures_change_margin_type(symbol=symbol, marginType='ISOLATED')
+        except Exception as e:
+            # Margin type sudah ISOLATED biasanya error → bisa diabaikan
+            pass
+
+        order = client.futures_create_order(
+            symbol=symbol,
+            side='BUY' if signal == "LONG" else 'SELL',
+            type='MARKET',
+            quantity=quantity
+        )
+        print(f"[ORDER SUCCESS] {order}")
+        return True
+    except Exception as e:
+        print(f"[ORDER FAILED] {e}")
+        return False
+
 
 # ====== Streamlit UI ======
 st.set_page_config(page_title="Futures Signal Dashboard", layout="wide")
@@ -200,8 +221,6 @@ for symbol in SYMBOLS:
                 st.error(error_message)
                 with open("log_trading.txt", "a") as f:
                     f.write(f"{datetime.datetime.now()} | ERROR | {error_message}\n")
-
-        if st.button(f"🚨 Eksekusi Trade {symbol} ({signal})"):
             safe_execute_trade_and_notify()
 
     st.subheader(f"📊 {symbol} - Latest Candle")
