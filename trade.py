@@ -40,48 +40,73 @@ def position_exists(client, symbol, side):
         return False
 
 # ====== Eksekusi Order dengan SL dan TP ======
-def execute_trade_with_tp_sl(client, symbol, side, quantity, entry_price, stop_loss_price, take_profit_price, leverage=20):
+def execute_trade(symbol, side, quantity, entry_price, leverage, position_side="BOTH",
+                  sl_price=None, tp_price=None, trailing_stop_callback_rate=None):
     try:
         # Set leverage
         client.futures_change_leverage(symbol=symbol, leverage=leverage)
 
         order_side = "BUY" if side == "LONG" else "SELL"
-        close_side = "SELL" if side == "LONG" else "BUY"
+        opposite_side = "SELL" if side == "LONG" else "BUY"
 
-        # Adjust quantity
+        # Sesuaikan quantity
         quantity = adjust_quantity(symbol, quantity)
 
-        # Market entry
-        market_order = client.futures_create_order(
-            symbol=symbol,
-            side=order_side,
-            type="MARKET",
-            quantity=quantity
-        )
+        # Open posisi dengan market order
+        order_params = {
+            'symbol': symbol,
+            'side': order_side,
+            'type': 'MARKET',
+            'quantity': quantity
+        }
 
-        # Pasang SL
-        client.futures_create_order(
-            symbol=symbol,
-            side=close_side,
-            type="STOP_MARKET",
-            stopPrice=round(stop_loss_price, 2),
-            closePosition=True,
-            timeInForce="GTC"
-        )
+        if position_side != "BOTH":
+            order_params['positionSide'] = "LONG" if side == "LONG" else "SHORT"
 
-        # Pasang TP
-        client.futures_create_order(
-            symbol=symbol,
-            side=close_side,
-            type="TAKE_PROFIT_MARKET",
-            stopPrice=round(take_profit_price, 2),
-            closePosition=True,
-            timeInForce="GTC"
-        )
+        order = client.futures_create_order(**order_params)
 
-        print(f"[✅ ORDER EXECUTED] {symbol} {side} qty={quantity} entry={entry_price} SL={stop_loss_price} TP={take_profit_price}")
-        return market_order
+        # Pasang Stop Loss dan Take Profit
+        if sl_price:
+            sl_params = {
+                'symbol': symbol,
+                'side': opposite_side,
+                'type': 'STOP_MARKET',
+                'stopPrice': round(sl_price, 2),
+                'closePosition': True,
+                'timeInForce': 'GTC'
+            }
+            if position_side != "BOTH":
+                sl_params['positionSide'] = "LONG" if side == "LONG" else "SHORT"
+            client.futures_create_order(**sl_params)
+
+        if tp_price:
+            tp_params = {
+                'symbol': symbol,
+                'side': opposite_side,
+                'type': 'TAKE_PROFIT_MARKET',
+                'stopPrice': round(tp_price, 2),
+                'closePosition': True,
+                'timeInForce': 'GTC'
+            }
+            if position_side != "BOTH":
+                tp_params['positionSide'] = "LONG" if side == "LONG" else "SHORT"
+            client.futures_create_order(**tp_params)
+
+        # Pasang Trailing Stop jika diatur
+        if trailing_stop_callback_rate:
+            ts_params = {
+                'symbol': symbol,
+                'side': opposite_side,
+                'type': 'TRAILING_STOP_MARKET',
+                'callbackRate': trailing_stop_callback_rate,
+                'reduceOnly': True
+            }
+            if position_side != "BOTH":
+                ts_params['positionSide'] = "LONG" if side == "LONG" else "SHORT"
+            client.futures_create_order(**ts_params)
+
+        return order
 
     except BinanceAPIException as e:
-        print(f"[❌ TRADE FAILED] {e.message}")
+        print(f"[❌ EXECUTION FAILED] {e}")
         return None
