@@ -165,14 +165,15 @@ for symbol in SYMBOLS:
         try:
             # Pemanggilan fungsi trade sudah disesuaikan
             result = execute_trade(
-                symbol=symbol,
-                side=signal,
-                quantity=pos_size,
-                entry_price=entry_realtime,
-                leverage=leverage,
-                risk_pct=risk_pct,
-                position_side=signal
-            )
+            symbol=symbol,
+            side=signal,
+            quantity=pos_size,
+            entry_price=entry_realtime,
+            leverage=leverage,
+            position_side=signal,
+            sl_price=sl,
+            tp_price=tp
+          )
             if result:
                 st.success(f"✅ Trade berhasil: {symbol} ({signal})")
                 save_last_trade(symbol, INTERVAL, signal, candle_time)
