@@ -9,6 +9,7 @@ from streamlit_autorefresh import st_autorefresh
 from ta.trend import EMAIndicator, ADXIndicator, MACD
 from ta.momentum import RSIIndicator
 from ta.volatility import BollingerBands, AverageTrueRange
+from trade import execute_trade  # Import dari modul trade.py
 
 # ====== Initialize Binance Client ======
 client = Client(os.getenv("BINANCE_API_KEY"), os.getenv("BINANCE_API_SECRET"))
@@ -22,7 +23,8 @@ LIMIT = 100
 REFRESH_INTERVAL = 55  # seconds
 account_balance = 20  # USD
 risk_pct = 10
-leverage = 100
+leverage = 50
+MIN_QTY = 0.001
 
 # ====== Helper Functions ======
 @st.cache_data(ttl=55)
@@ -97,7 +99,6 @@ def calculate_position_size(account_balance, risk_pct, entry, sl, leverage):
     risk_amount = account_balance * (risk_pct / 100)
     stop_loss_distance = abs(entry - sl)
     if stop_loss_distance == 0:
-        st.warning("⚠️ Stop loss distance = 0. Posisi tidak valid.")
         return 0
     raw_pos_size = risk_amount / stop_loss_distance
     pos_size = raw_pos_size * leverage
@@ -114,33 +115,6 @@ def margin_call_warning(account_balance, pos_size, entry, leverage):
         return True, "⚠️ Margin call risk tinggi!"
     else:
         return False, ""
-
-def format_risk_message(symbol, interval, entry, sl, tp, pos_size, rr, note):
-    return (
-        f"Signal: {symbol} {interval}\n"
-        f"Entry: {entry:.2f}\nSL: {sl:.2f}\nTP: {tp:.2f}\n"
-        f"Position Size: {pos_size:.4f}\nRR: {rr}\n{note}"
-    )
-
-def execute_trade(symbol, signal, quantity, entry, leverage, atr=None, auto_switch=True, timeout=300):
-    try:
-        client.futures_change_leverage(symbol=symbol, leverage=leverage)
-        try:
-            client.futures_change_margin_type(symbol=symbol, marginType='ISOLATED')
-        except Exception as e:
-            pass  # Sudah ISOLATED
-
-        order = client.futures_create_order(
-            symbol=symbol,
-            side='BUY' if signal == "LONG" else 'SELL',
-            type='MARKET',
-            quantity=quantity
-        )
-        print(f"[ORDER SUCCESS] {order}")
-        return True
-    except Exception as e:
-        print(f"[ORDER FAILED] {e}")
-        return False
 
 # ====== Streamlit UI ======
 st.set_page_config(page_title="Futures Signal Dashboard", layout="wide")
@@ -173,37 +147,27 @@ for symbol in SYMBOLS:
             tp = entry - latest['atr'] * 2.5
 
         pos_size = calculate_position_size(account_balance, risk_pct, entry, sl, leverage)
+        if pos_size < MIN_QTY:
+            st.warning(f"⛔ Ukuran posisi terlalu kecil (min {MIN_QTY})")
+            continue
+
         rrr = calculate_risk_reward(entry, sl, tp)
         is_margin_risk, margin_note = margin_call_warning(account_balance, pos_size, entry, leverage)
-        risk_msg = format_risk_message(symbol, INTERVAL, entry, sl, tp, pos_size, rrr, margin_note)
-        st.info(risk_msg)
+
+        st.info(f"Symbol: {symbol} | Signal: {signal}\nEntry: {entry:.2f} | SL: {sl:.2f} | TP: {tp:.2f}\nPos Size: {pos_size} | RR: {rrr}\n{margin_note}")
 
         try:
             entry_realtime = float(client.futures_mark_price(symbol=symbol)['markPrice'])
         except Exception as e:
-            st.warning(f"⚠️ Gagal ambil harga realtime Binance: {e}")
+            st.warning(f"⚠️ Gagal ambil harga realtime: {e}")
             entry_realtime = entry
 
-        def safe_execute_trade_and_notify():
-            try:
-                trade_result = execute_trade(
-                    symbol=symbol,
-                    signal=signal,
-                    quantity=pos_size,
-                    entry=entry_realtime,
-                    leverage=leverage,
-                    atr=latest['atr'],
-                    auto_switch=True
-                )
-                if trade_result:
-                    st.success(f"✅ Trade berhasil dieksekusi untuk {symbol} ({signal})")
-                    save_last_trade(symbol, INTERVAL, signal, candle_time)
-                else:
-                    raise Exception("Trade execution returned False")
-            except Exception as e:
-                st.error(f"[❌] Gagal eksekusi trade: {e}")
-
-        safe_execute_trade_and_notify()
+        result = execute_trade(symbol, signal, pos_size, entry_realtime, leverage)
+        if result:
+            st.success(f"✅ Trade berhasil: {symbol} ({signal})")
+            save_last_trade(symbol, INTERVAL, signal, candle_time)
+        else:
+            st.error(f"❌ Trade gagal untuk {symbol}")
 
     st.subheader(f"📊 {symbol} - Latest Candle")
     st.write(latest[['close', 'volume', 'volume_spike', 'rsi', 'adx', 'macd', 'macd_signal', 'ema']])
@@ -211,8 +175,3 @@ for symbol in SYMBOLS:
 
 # Sidebar info
 st.sidebar.write("⏱ Waktu sekarang:", datetime.datetime.now().strftime("%H:%M:%S"))
-debug = st.sidebar.checkbox("🔍 Debug Mode", value=False)
-if debug:
-    st.write("====== DEBUG: ENHANCED SIGNAL CHECK ======")
-    st.write(f"CLOSE: {latest['close']}, OPEN: {latest['open']}")
-    st.write(client.futures_account_balance())
