@@ -1,11 +1,11 @@
 from binance.client import Client
-import os
 from binance.exceptions import BinanceAPIException
+import os
 
 client = Client(os.getenv("BINANCE_API_KEY"), os.getenv("BINANCE_API_SECRET"))
 client.FUTURES_URL = 'https://fapi.binance.com/fapi'
 
-# Ambil presisi quantity (step size) untuk setiap symbol
+# ====== Helper ======
 def get_quantity_precision(symbol):
     try:
         info = client.futures_exchange_info()
@@ -26,60 +26,62 @@ def adjust_quantity(symbol, quantity):
     precision = get_quantity_precision(symbol)
     return round(quantity, precision)
 
-# Fungsi eksekusi trade dan pasang SL + TP
-def execute_trade(symbol, side, quantity, entry_price, leverage, position_side="BOTH", sl_price=None, tp_price=None):
+# ====== Check Posisi ======
+def position_exists(client, symbol, side):
+    try:
+        positions = client.futures_position_information(symbol=symbol)
+        for p in positions:
+            pos_amt = float(p['positionAmt'])
+            if (side == "LONG" and pos_amt > 0) or (side == "SHORT" and pos_amt < 0):
+                return True
+        return False
+    except Exception as e:
+        print(f"[❌ POSITION CHECK ERROR] {e}")
+        return False
+
+# ====== Eksekusi Order dengan SL dan TP ======
+def execute_trade_with_tp_sl(client, symbol, side, quantity, entry_price, stop_loss_price, take_profit_price, leverage=20):
     try:
         # Set leverage
         client.futures_change_leverage(symbol=symbol, leverage=leverage)
 
         order_side = "BUY" if side == "LONG" else "SELL"
-        opposite_side = "SELL" if side == "LONG" else "BUY"
+        close_side = "SELL" if side == "LONG" else "BUY"
 
-        # Sesuaikan quantity ke precision
+        # Adjust quantity
         quantity = adjust_quantity(symbol, quantity)
 
-        # Market order untuk open posisi
-        order_params = {
-            'symbol': symbol,
-            'side': order_side,
-            'type': 'MARKET',
-            'quantity': quantity
-        }
+        # Market entry
+        market_order = client.futures_create_order(
+            symbol=symbol,
+            side=order_side,
+            type="MARKET",
+            quantity=quantity
+        )
 
-        if position_side != "BOTH":
-            order_params['positionSide'] = "LONG" if side == "LONG" else "SHORT"
+        # Pasang SL
+        client.futures_create_order(
+            symbol=symbol,
+            side=close_side,
+            type="STOP_MARKET",
+            stopPrice=round(stop_loss_price, 2),
+            closePosition=True,
+            timeInForce="GTC"
+        )
 
-        # Eksekusi market order
-        order = client.futures_create_order(**order_params)
+        # Pasang TP
+        client.futures_create_order(
+            symbol=symbol,
+            side=close_side,
+            type="TAKE_PROFIT_MARKET",
+            stopPrice=round(take_profit_price, 2),
+            closePosition=True,
+            timeInForce="GTC"
+        )
 
-        # Pasang SL (stop market) dan TP (take profit market)
-        if sl_price and tp_price:
-            sl_params = {
-                'symbol': symbol,
-                'side': opposite_side,
-                'type': 'STOP_MARKET',
-                'stopPrice': round(sl_price, 2),
-                'closePosition': True,
-                'timeInForce': 'GTC'
-            }
-
-            tp_params = {
-                'symbol': symbol,
-                'side': opposite_side,
-                'type': 'TAKE_PROFIT_MARKET',
-                'stopPrice': round(tp_price, 2),
-                'closePosition': True,
-                'timeInForce': 'GTC'
-            }
-
-            if position_side != "BOTH":
-                sl_params['positionSide'] = tp_params['positionSide'] = "LONG" if side == "LONG" else "SHORT"
-
-            client.futures_create_order(**sl_params)
-            client.futures_create_order(**tp_params)
-
-        return order
+        print(f"[✅ ORDER EXECUTED] {symbol} {side} qty={quantity} entry={entry_price} SL={stop_loss_price} TP={take_profit_price}")
+        return market_order
 
     except BinanceAPIException as e:
-        print(f"[❌ EXECUTION FAILED] {e}")
+        print(f"[❌ TRADE FAILED] {e.message}")
         return None
