@@ -70,6 +70,9 @@ def execute_trade(symbol: str, side: str, quantity: float, entry_price: float, l
     position_side: "BOTH", "LONG", atau "SHORT"
     """
     try:
+        # 🔄 Tutup posisi lawan sebelum entry
+        close_opposite_position(symbol, side)
+
         # Set leverage
         client.futures_change_leverage(symbol=symbol, leverage=leverage)
 
