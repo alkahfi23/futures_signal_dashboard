@@ -89,9 +89,12 @@ def calculate_position_size(balance, risk_pct, entry, sl, leverage):
 
 def margin_warning(balance, pos_size, entry, leverage):
     margin_used = (pos_size * entry) / leverage
-    if margin_used > balance * 0.1:
+    if margin_used > balance:
+        return True, "❌ Margin tidak cukup untuk membuka posisi ini."
+    elif margin_used > balance * 0.9:
         return True, "⚠️ Margin call risk tinggi!"
     return False, ""
+
 
 # ====== UI ======
 st.set_page_config(page_title="Futures Dashboard", layout="wide")
@@ -120,6 +123,12 @@ for symbol in SYMBOLS:
         if pos_size < MIN_QTY:
             st.warning(f"⛔ Ukuran posisi terlalu kecil")
             continue
+
+
+        is_margin_risk, note = margin_warning(account_balance, pos_size, entry, leverage)
+        if is_margin_risk:
+        st.error(f"{note} Margin dibutuhkan: ${(pos_size * entry / leverage):.2f}")
+        continue
 
         is_margin_risk, note = margin_warning(account_balance, pos_size, entry, leverage)
         st.info(f"{symbol} Signal: {signal} | Entry: {entry:.2f} | SL: {sl:.2f} | TP: {tp:.2f} | PosSize: {pos_size} | {note}")
