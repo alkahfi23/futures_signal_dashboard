@@ -124,15 +124,11 @@ def format_risk_message(symbol, interval, entry, sl, tp, pos_size, rr, note):
 
 def execute_trade(symbol, signal, quantity, entry, leverage, atr=None, auto_switch=True, timeout=300):
     try:
-        # Set leverage terlebih dahulu
         client.futures_change_leverage(symbol=symbol, leverage=leverage)
-
-        # Set margin type ke ISOLATED (atau CROSS jika ingin)
         try:
             client.futures_change_margin_type(symbol=symbol, marginType='ISOLATED')
         except Exception as e:
-            # Margin type sudah ISOLATED biasanya error → bisa diabaikan
-            pass
+            pass  # Sudah ISOLATED
 
         order = client.futures_create_order(
             symbol=symbol,
@@ -146,10 +142,9 @@ def execute_trade(symbol, signal, quantity, entry, leverage, atr=None, auto_swit
         print(f"[ORDER FAILED] {e}")
         return False
 
-
 # ====== Streamlit UI ======
 st.set_page_config(page_title="Futures Signal Dashboard", layout="wide")
-st.title("🚀 Futures Signal Dashboard - 1 Minute")
+st.title("\U0001F680 Futures Signal Dashboard - 1 Minute")
 st_autorefresh(interval=REFRESH_INTERVAL * 1000, key="refresh")
 
 for symbol in SYMBOLS:
@@ -184,35 +179,31 @@ for symbol in SYMBOLS:
         st.info(risk_msg)
 
         try:
-        entry_realtime = float(client.futures_mark_price(symbol=symbol)['markPrice'])
+            entry_realtime = float(client.futures_mark_price(symbol=symbol)['markPrice'])
         except Exception as e:
-        st.warning(f"⚠️ Gagal ambil harga realtime Binance: {e}")
-        entry_realtime = entry  # fallback to previous close
+            st.warning(f"⚠️ Gagal ambil harga realtime Binance: {e}")
+            entry_realtime = entry
 
-        # Pastikan ini DILUAR blok try/except
         def safe_execute_trade_and_notify():
-        try:
-        trade_result = execute_trade(
-            symbol=symbol,
-            signal=signal,
-            quantity=pos_size,
-            entry=entry_realtime,
-            leverage=leverage,
-            atr=latest['atr'],
-            auto_switch=True
-            )
-        if trade_result:
-            st.success(f"✅ Trade berhasil dieksekusi untuk {symbol} ({signal})")
-            save_last_trade(symbol, INTERVAL, signal, candle_time)
-        else:
-            raise Exception("Trade execution returned False")
-    except Exception as e:
-        st.error(f"[❌] Gagal eksekusi trade: {e}")
+            try:
+                trade_result = execute_trade(
+                    symbol=symbol,
+                    signal=signal,
+                    quantity=pos_size,
+                    entry=entry_realtime,
+                    leverage=leverage,
+                    atr=latest['atr'],
+                    auto_switch=True
+                )
+                if trade_result:
+                    st.success(f"✅ Trade berhasil dieksekusi untuk {symbol} ({signal})")
+                    save_last_trade(symbol, INTERVAL, signal, candle_time)
+                else:
+                    raise Exception("Trade execution returned False")
+            except Exception as e:
+                st.error(f"[❌] Gagal eksekusi trade: {e}")
 
-# Jalankan fungsi
-safe_execute_trade_and_notify()
-
-           
+        safe_execute_trade_and_notify()
 
     st.subheader(f"📊 {symbol} - Latest Candle")
     st.write(latest[['close', 'volume', 'volume_spike', 'rsi', 'adx', 'macd', 'macd_signal', 'ema']])
