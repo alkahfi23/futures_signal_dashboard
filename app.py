@@ -98,6 +98,8 @@ st.set_page_config(page_title="Futures Dashboard", layout="wide")
 st.title("📈 Binance Futures Dashboard (1-Minute Signal)")
 st_autorefresh(interval=REFRESH_INTERVAL * 1000, key="refresh")
 
+# ... (kode impor dan setup sebelumnya tetap sama)
+
 for symbol in SYMBOLS:
     df = get_klines(symbol, INTERVAL, LIMIT)
     if df.empty or df.shape[0] < 20:
@@ -110,10 +112,11 @@ for symbol in SYMBOLS:
     entry = latest["close"]
     candle_time = str(latest["open_time"])
 
-    if signal and not position_exists(client, symbol, signal):  # <== INI HARUS SETINGKAT DENGAN YANG ATAS
+    if signal and not position_exists(client, symbol, signal):
         sl = entry - latest['atr'] * 1.5 if signal == "LONG" else entry + latest['atr'] * 1.5
         tp = entry + latest['atr'] * 2.5 if signal == "LONG" else entry - latest['atr'] * 2.5
         pos_size = calculate_position_size(account_balance, risk_pct, entry, sl, leverage)
+
         if pos_size < MIN_QTY:
             st.warning(f"⛔ Ukuran posisi terlalu kecil")
             continue
@@ -123,7 +126,6 @@ for symbol in SYMBOLS:
 
         try:
             trailing_stop_callback_rate = 1.0
-
             result = execute_trade(
                 symbol=symbol,
                 side=signal,
@@ -141,9 +143,6 @@ for symbol in SYMBOLS:
                 st.error(f"❌ Order gagal {symbol}")
         except Exception as e:
             st.error(f"❌ Error eksekusi trade: {e}")
-    else:
-        st.write(f"ℹ️ {symbol}: Tidak ada sinyal baru atau posisi sudah terbuka.")
-
     else:
         st.write(f"ℹ️ {symbol}: Tidak ada sinyal baru atau posisi sudah terbuka.")
 
