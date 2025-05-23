@@ -139,38 +139,20 @@ def place_trade(symbol, signal, quantity, sl, tp, leverage):
         print(f"[ERROR] Trade Error: {e}")
         return False
 
-def execute_trade(symbol, signal, entry, atr, account_balance, risk_pct, max_leverage=100):
+def execute_trade(symbol, side, quantity, entry_price, leverage, position_side):
     try:
-        # Perhitungan dinamis posisi dan leverage agar tidak margin call
-        risk_amount = account_balance * (risk_pct / 100)
-        sl_distance = atr * 1.5  # SL jarak default (sama dgn rumus utama)
-        raw_position = risk_amount / sl_distance
-
-        # Coba leverage dari tinggi ke rendah sampai tidak terlalu berisiko
-        for leverage in range(max_leverage, 1, -1):
-            pos_size = raw_position * leverage
-            used_margin = (pos_size * entry) / leverage
-            if used_margin <= account_balance * 0.9:  # Sisakan margin 10%
-                break  # leverage aman ditemukan
-
-        # Set leverage dan margin type CROSS
         client.futures_change_leverage(symbol=symbol, leverage=leverage)
-        try:
-            client.futures_change_margin_type(symbol=symbol, marginType='CROSSED')
-        except Exception as e:
-            if "No need to change margin type" not in str(e):
-                raise
 
-        # Buat order
+        order_side = "BUY" if side == "LONG" else "SELL"
+
         order = client.futures_create_order(
             symbol=symbol,
-            side='BUY' if signal == "LONG" else 'SELL',
-            type='MARKET',
-            quantity=round(pos_size, 4)
+            side=order_side,
+            type="MARKET",
+            quantity=quantity,
+            positionSide=position_side,  # <--- Gunakan parameter ini
         )
-
-        print(f"[✅ ORDER SUCCESS] {order}")
-        return True
+        return order
     except Exception as e:
         print(f"[❌ EXECUTION FAILED] {e}")
-        return False
+        return None
