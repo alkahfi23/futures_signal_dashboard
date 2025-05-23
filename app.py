@@ -189,7 +189,7 @@ for symbol in SYMBOLS:
             st.warning(f"⚠️ Gagal ambil harga realtime Binance: {e}")
             entry_realtime = entry
 
-        def safe_execute_trade_and_notify():
+            def safe_execute_trade_and_notify():
             try:
                 trade_result = execute_trade(
                     symbol=symbol,
@@ -201,27 +201,15 @@ for symbol in SYMBOLS:
                     auto_switch=True
                 )
                 if trade_result:
-                    message = (
-                        f"✅ TRADE EXECUTED:\n"
-                        f"Pair: {symbol}\n"
-                        f"Posisi: {signal}\n"
-                        f"Entry: {entry_realtime:.2f}\n"
-                        f"SL: {sl:.2f}\n"
-                        f"TP: {tp:.2f}\n"
-                        f"Qty: {pos_size:.4f}"
-                    )
-                    st.success(message.replace("\n", " | "))
+                    ...
                     save_last_trade(symbol, INTERVAL, signal, candle_time)
-                    with open("log_trading.txt", "a") as f:
-                        f.write(f"{datetime.datetime.now()} | SUCCESS | {message}\n")
                 else:
                     raise Exception("Trade execution returned False")
             except Exception as e:
-                error_message = f"[ERROR] Gagal eksekusi trade untuk {symbol}: {e}"
-                st.error(error_message)
-                with open("log_trading.txt", "a") as f:
-                    f.write(f"{datetime.datetime.now()} | ERROR | {error_message}\n")
-            safe_execute_trade_and_notify()
+                ...
+        # ✅ Jalankan fungsi hanya SEKALI
+        safe_execute_trade_and_notify()
+           
 
     st.subheader(f"📊 {symbol} - Latest Candle")
     st.write(latest[['close', 'volume', 'volume_spike', 'rsi', 'adx', 'macd', 'macd_signal', 'ema']])
