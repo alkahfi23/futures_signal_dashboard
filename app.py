@@ -123,12 +123,11 @@ for symbol in SYMBOLS:
         if pos_size < MIN_QTY:
             st.warning(f"⛔ Ukuran posisi terlalu kecil")
             continue
-
-
+            
         is_margin_risk, note = margin_warning(account_balance, pos_size, entry, leverage)
         if is_margin_risk:
-        st.error(f"{note} Margin dibutuhkan: ${(pos_size * entry / leverage):.2f}")
-        continue
+           st.error(f"{note} Margin dibutuhkan: ${(pos_size * entry / leverage):.2f}")
+           continue
 
         is_margin_risk, note = margin_warning(account_balance, pos_size, entry, leverage)
         st.info(f"{symbol} Signal: {signal} | Entry: {entry:.2f} | SL: {sl:.2f} | TP: {tp:.2f} | PosSize: {pos_size} | {note}")
