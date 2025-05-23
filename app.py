@@ -184,31 +184,33 @@ for symbol in SYMBOLS:
         st.info(risk_msg)
 
         try:
-            entry_realtime = float(client.futures_mark_price(symbol=symbol)['markPrice'])
-        except Exception as e:
-            st.warning(f"⚠️ Gagal ambil harga realtime Binance: {e}")
-            entry_realtime = entry
+    entry_realtime = float(client.futures_mark_price(symbol=symbol)['markPrice'])
+except Exception as e:
+    st.warning(f"⚠️ Gagal ambil harga realtime Binance: {e}")
+    entry_realtime = entry
 
-            def safe_execute_trade_and_notify():
-            try:
-                trade_result = execute_trade(
-                    symbol=symbol,
-                    signal=signal,
-                    quantity=pos_size,
-                    entry=entry_realtime,
-                    leverage=leverage,
-                    atr=latest['atr'],
-                    auto_switch=True
-                )
-                if trade_result:
-                    ...
-                    save_last_trade(symbol, INTERVAL, signal, candle_time)
-                else:
-                    raise Exception("Trade execution returned False")
-            except Exception as e:
-                ...
-        # ✅ Jalankan fungsi hanya SEKALI
-        safe_execute_trade_and_notify()
+def safe_execute_trade_and_notify():
+    try:
+        trade_result = execute_trade(
+            symbol=symbol,
+            signal=signal,
+            quantity=pos_size,
+            entry=entry_realtime,
+            leverage=leverage,
+            atr=latest['atr'],
+            auto_switch=True
+        )
+        if trade_result:
+            st.success(f"✅ Trade berhasil dieksekusi untuk {symbol} ({signal})")
+            save_last_trade(symbol, INTERVAL, signal, candle_time)
+        else:
+            raise Exception("Trade execution returned False")
+    except Exception as e:
+        st.error(f"[❌] Gagal eksekusi trade: {e}")
+
+# ✅ Jalankan fungsi hanya SEKALI
+safe_execute_trade_and_notify()
+
            
 
     st.subheader(f"📊 {symbol} - Latest Candle")
