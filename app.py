@@ -10,7 +10,7 @@ from streamlit_autorefresh import st_autorefresh
 from ta.trend import EMAIndicator, ADXIndicator, MACD
 from ta.momentum import RSIIndicator
 from ta.volatility import BollingerBands, AverageTrueRange
-from trade import execute_trade_with_tp_sl, position_exists
+from trade import execute_trade, position_exists
 
 # ====== Initialize Binance Client ======
 client = Client(os.getenv("BINANCE_API_KEY"), os.getenv("BINANCE_API_SECRET"))
@@ -122,16 +122,19 @@ for symbol in SYMBOLS:
         st.info(f"{symbol} Signal: {signal} | Entry: {entry:.2f} | SL: {sl:.2f} | TP: {tp:.2f} | PosSize: {pos_size} | {note}")
 
         try:
-            result = execute_trade_with_tp_sl(
-                client=client,
-                symbol=symbol,
-                side=signal,
-                quantity=pos_size,
-                entry_price=entry,
-                stop_loss_price=sl,
-                take_profit_price=tp,
-                leverage=leverage
-            )
+            trailing_stop_callback_rate = 1.0  # Misalnya 1%, bisa disesuaikan
+
+    result = execute_trade(
+    symbol=symbol,
+    side=signal,
+    quantity=pos_size,
+    entry_price=entry_realtime,
+    leverage=leverage,
+    position_side=signal,
+    sl_price=sl,
+    tp_price=tp,
+    trailing_stop_callback_rate=trailing_stop_callback_rate
+)
             if result:
                 st.success(f"✅ Order berhasil {signal} {symbol}")
             else:
