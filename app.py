@@ -79,9 +79,9 @@ def enhanced_signal(df):
     score_short = sum([macd_cross_down, ema_down, rsi_bearish, bb_lower_break, vol_spike, adx_strong])
 
     if score_long >= 3:
-        return "LONG"
+        return "BUY"
     elif score_short >= 3:
-        return "SHORT"
+        return "SELL"
     return ""
 
 def load_last_trade(symbol, interval):
@@ -139,10 +139,10 @@ for symbol in SYMBOLS:
             continue
 
         entry = latest['close']
-        if signal == "LONG":
+        if signal == "BUY":
             sl = entry - latest['atr'] * 1.5
             tp = entry + latest['atr'] * 2.5
-        elif signal == "SHORT":
+        elif signal == "SELL":
             sl = entry + latest['atr'] * 1.5
             tp = entry - latest['atr'] * 2.5
 
@@ -165,7 +165,7 @@ for symbol in SYMBOLS:
         try:
             result = execute_trade(
                 symbol=symbol,
-                side=signal,
+                position_side=signal,
                 quantity=pos_size,
                 entry_price=entry_realtime,
                 leverage=leverage,
