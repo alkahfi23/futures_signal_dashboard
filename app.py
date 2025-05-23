@@ -162,12 +162,15 @@ for symbol in SYMBOLS:
             st.warning(f"⚠️ Gagal ambil harga realtime: {e}")
             entry_realtime = entry
 
-        result = execute_trade(symbol, signal, pos_size, entry_realtime, leverage, risk_pct)
-        if result:
-            st.success(f"✅ Trade berhasil: {symbol} ({signal})")
-            save_last_trade(symbol, INTERVAL, signal, candle_time)
-        else:
-            st.error(f"❌ Trade gagal untuk {symbol}")
+        try:
+            result = execute_trade(symbol=symbol, signal=signal, quantity=pos_size, entry_price=entry_realtime, leverage=leverage, risk_pct=risk_pct)
+            if result:
+                st.success(f"✅ Trade berhasil: {symbol} ({signal})")
+                save_last_trade(symbol, INTERVAL, signal, candle_time)
+            else:
+                st.error(f"❌ Trade gagal untuk {symbol}")
+        except Exception as e:
+            st.error(f"❌ Error saat eksekusi trade: {e}")
 
     st.subheader(f"📊 {symbol} - Latest Candle")
     st.write(latest[['close', 'volume', 'volume_spike', 'rsi', 'adx', 'macd', 'macd_signal', 'ema']])
