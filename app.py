@@ -121,20 +121,20 @@ for symbol in SYMBOLS:
         is_margin_risk, note = margin_warning(account_balance, pos_size, entry, leverage)
         st.info(f"{symbol} Signal: {signal} | Entry: {entry:.2f} | SL: {sl:.2f} | TP: {tp:.2f} | PosSize: {pos_size} | {note}")
 
-        try:
+            try:
             trailing_stop_callback_rate = 1.0  # Misalnya 1%, bisa disesuaikan
 
-    result = execute_trade(
-    symbol=symbol,
-    side=signal,
-    quantity=pos_size,
-    entry_price=entry_realtime,
-    leverage=leverage,
-    position_side=signal,
-    sl_price=sl,
-    tp_price=tp,
-    trailing_stop_callback_rate=trailing_stop_callback_rate
-)
+            result = execute_trade(
+                symbol=symbol,
+                side=signal,
+                quantity=pos_size,
+                entry_price=entry,
+                leverage=leverage,
+                position_side=signal,
+                sl_price=sl,
+                tp_price=tp,
+                trailing_stop_callback_rate=trailing_stop_callback_rate
+            )
             if result:
                 st.success(f"✅ Order berhasil {signal} {symbol}")
             else:
