@@ -23,7 +23,7 @@ LIMIT = 100
 REFRESH_INTERVAL = 55
 account_balance = 18
 risk_pct = 10
-leverage = 50
+leverage = 100
 MIN_QTY = 0.001
 
 # ====== Helpers ======
