@@ -139,18 +139,22 @@ def place_trade(symbol, signal, quantity, sl, tp, leverage):
         print(f"[ERROR] Trade Error: {e}")
         return False
 
-def execute_trade(symbol, side, quantity, entry_price, leverage, position_side):
+def execute_trade(symbol, side, quantity, entry_price, leverage, risk_pct, position_side):
     try:
+        # Set leverage
         client.futures_change_leverage(symbol=symbol, leverage=leverage)
 
+        # Tentukan arah order
         order_side = "BUY" if side == "LONG" else "SELL"
 
+        # Buat order market
         order = client.futures_create_order(
             symbol=symbol,
             side=order_side,
             type="MARKET",
             quantity=quantity,
-            positionSide=position_side,  # <--- Gunakan parameter ini
+            positionSide=position_side.upper(),  # Misalnya: "LONG" atau "SHORT"
+            reduceOnly=False
         )
         return order
     except Exception as e:
