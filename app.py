@@ -24,7 +24,7 @@ REFRESH_INTERVAL = 55
 account_balance = 18
 risk_pct = 10
 leverage = 100
-MIN_QTY = 0.001
+MIN_QTY = 0.0001
 
 # ====== Helpers ======
 @st.cache_data(ttl=REFRESH_INTERVAL)
