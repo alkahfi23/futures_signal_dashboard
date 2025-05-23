@@ -110,7 +110,7 @@ for symbol in SYMBOLS:
     entry = latest["close"]
     candle_time = str(latest["open_time"])
 
-    if signal and not position_exists(client, symbol, signal):
+        if signal and not position_exists(client, symbol, signal):
         sl = entry - latest['atr'] * 1.5 if signal == "LONG" else entry + latest['atr'] * 1.5
         tp = entry + latest['atr'] * 2.5 if signal == "LONG" else entry - latest['atr'] * 2.5
         pos_size = calculate_position_size(account_balance, risk_pct, entry, sl, leverage)
@@ -121,7 +121,7 @@ for symbol in SYMBOLS:
         is_margin_risk, note = margin_warning(account_balance, pos_size, entry, leverage)
         st.info(f"{symbol} Signal: {signal} | Entry: {entry:.2f} | SL: {sl:.2f} | TP: {tp:.2f} | PosSize: {pos_size} | {note}")
 
-            try:
+        try:
             trailing_stop_callback_rate = 1.0  # Misalnya 1%, bisa disesuaikan
 
             result = execute_trade(
