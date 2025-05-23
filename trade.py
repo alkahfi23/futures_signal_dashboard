@@ -1,50 +1,59 @@
-import os
 from binance.client import Client
-from binance.enums import *
+import os
+from binance.exceptions import BinanceAPIException
 
-api_key = os.getenv("BINANCE_API_KEY")
-api_secret = os.getenv("BINANCE_API_SECRET")
-client = Client(api_key, api_secret)
+client = Client(os.getenv("BINANCE_API_KEY"), os.getenv("BINANCE_API_SECRET"))
+client.FUTURES_URL = 'https://fapi.binance.com/fapi'
 
-# Pastikan leverage di-set sebelum eksekusi order
-def set_leverage(symbol, leverage):
+# Fungsi untuk mengambil precision quantity (stepSize) dari exchange info
+def get_quantity_precision(symbol):
     try:
+        info = client.futures_exchange_info()
+        for s in info['symbols']:
+            if s['symbol'] == symbol:
+                for f in s['filters']:
+                    if f['filterType'] == 'LOT_SIZE':
+                        step_size = float(f['stepSize'])
+                        precision = 0
+                        while round(step_size * (10 ** precision)) != step_size * (10 ** precision):
+                            precision += 1
+                        return precision
+        return 3
+    except:
+        return 3
+
+# Fungsi untuk menyesuaikan quantity ke precision yang benar
+def adjust_quantity(symbol, quantity):
+    precision = get_quantity_precision(symbol)
+    return round(quantity, precision)
+
+# Fungsi utama untuk eksekusi trade
+def execute_trade(symbol, side, quantity, entry_price, leverage, risk_pct, position_side="BOTH"):
+    try:
+        # Set leverage dulu
         client.futures_change_leverage(symbol=symbol, leverage=leverage)
-    except Exception as e:
-        print(f"[SET LEVERAGE FAILED] {e}")
 
-# Eksekusi order di Futures Binance dengan dukungan mode hedge
-def execute_trade(symbol, side, quantity, entry_price, leverage=50, risk_pct=10):
-    try:
-        set_leverage(symbol, leverage)
+        # Atur posisi long/short berdasarkan hedge mode
+        order_side = "BUY" if side == "LONG" else "SELL"
 
-        order_side = SIDE_BUY if side == "LONG" else SIDE_SELL
-        position_side = "LONG" if side == "LONG" else "SHORT"
+        # Sesuaikan quantity dengan precision
+        quantity = adjust_quantity(symbol, quantity)
 
-        # Tentukan precision quantity sesuai aturan Binance
-        exchange_info = client.futures_exchange_info()
-        symbol_info = next((s for s in exchange_info['symbols'] if s['symbol'] == symbol), None)
-        step_size = 0.001
-        if symbol_info:
-            for f in symbol_info['filters']:
-                if f['filterType'] == 'LOT_SIZE':
-                    step_size = float(f['stepSize'])
-                    break
+        params = {
+            'symbol': symbol,
+            'side': order_side,
+            'type': 'MARKET',
+            'quantity': quantity,
+        }
 
-        precision = abs(round(-1 * (len(str(step_size).split('.')[-1]) - str(step_size).split('.')[-1].find('1'))))
-        quantity = round(quantity, precision)
+        # Tambahkan positionSide jika pakai hedge mode
+        if position_side != "BOTH":
+            params['positionSide'] = "LONG" if side == "LONG" else "SHORT"
 
-        order = client.futures_create_order(
-            symbol=symbol,
-            side=order_side,
-            type=ORDER_TYPE_MARKET,
-            quantity=quantity,
-            positionSide=position_side,
-            newOrderRespType='RESULT'
-        )
-        print(f"[✅ EXECUTED] {symbol} {side} @ {entry_price} | Qty: {quantity}")
+        # Eksekusi order
+        order = client.futures_create_order(**params)
         return order
 
-    except Exception as e:
+    except BinanceAPIException as e:
         print(f"[❌ EXECUTION FAILED] {e}")
         return None
