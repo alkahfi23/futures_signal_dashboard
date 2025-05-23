@@ -139,55 +139,38 @@ def place_trade(symbol, signal, quantity, sl, tp, leverage):
         print(f"[ERROR] Trade Error: {e}")
         return False
 
-def execute_trade(symbol, signal, quantity, entry, leverage, atr=None, auto_switch=True, timeout=300):
-    print(f"[DEBUG] execute_trade called with symbol={symbol}, signal={signal}, quantity={quantity}, entry={entry}, leverage={leverage}, atr={atr}")
-
-    if atr:
-        sl, tp = calculate_sl_tp(entry, atr, signal)
-    else:
-        # fallback SL/TP 2% default
-        if signal == "LONG":
-            sl = entry * 0.98
-            tp = entry * 1.02
-        else:
-            sl = entry * 1.02
-            tp = entry * 0.98
-
-    print(f"[DEBUG] Calculated SL={sl}, TP={tp}")
-
-    if position_exists(symbol):
-        print(f"⚠️ Position already active for {symbol}, skipping new trade.")
-        return False
-
-    success = place_trade(symbol, signal, quantity, sl, tp, leverage)
-    if not success:
-        print("[ERROR] Initial trade placement failed.")
-        return False
-
-    if not auto_switch or atr is None:
-        return True
-
+def execute_trade(symbol, signal, entry, atr, account_balance, risk_pct, max_leverage=100):
     try:
-        print("🔄 Monitoring SL trigger for possible auto-switch...")
-        start_time = time.time()
+        # Perhitungan dinamis posisi dan leverage agar tidak margin call
+        risk_amount = account_balance * (risk_pct / 100)
+        sl_distance = atr * 1.5  # SL jarak default (sama dgn rumus utama)
+        raw_position = risk_amount / sl_distance
 
-        while time.time() - start_time < timeout:
-            price = float(client.futures_symbol_ticker(symbol=symbol)['price'])
-            print(f"[DEBUG] Current price: {price}")
-            if (signal == "LONG" and price <= sl) or (signal == "SHORT" and price >= sl):
-                print(f"⚠️ SL triggered at price {price}. Switching side.")
+        # Coba leverage dari tinggi ke rendah sampai tidak terlalu berisiko
+        for leverage in range(max_leverage, 1, -1):
+            pos_size = raw_position * leverage
+            used_margin = (pos_size * entry) / leverage
+            if used_margin <= account_balance * 0.9:  # Sisakan margin 10%
+                break  # leverage aman ditemukan
 
-                new_signal = "SHORT" if signal == "LONG" else "LONG"
-                new_entry = price
-                new_sl, new_tp = calculate_sl_tp(new_entry, atr, new_signal)
+        # Set leverage dan margin type CROSS
+        client.futures_change_leverage(symbol=symbol, leverage=leverage)
+        try:
+            client.futures_change_margin_type(symbol=symbol, marginType='CROSSED')
+        except Exception as e:
+            if "No need to change margin type" not in str(e):
+                raise
 
-                place_trade(symbol, new_signal, quantity, new_sl, new_tp, leverage)
-                break
+        # Buat order
+        order = client.futures_create_order(
+            symbol=symbol,
+            side='BUY' if signal == "LONG" else 'SELL',
+            type='MARKET',
+            quantity=round(pos_size, 4)
+        )
 
-            time.sleep(2)
-
+        print(f"[✅ ORDER SUCCESS] {order}")
+        return True
     except Exception as e:
-        print(f"[ERROR] SL monitor error: {e}")
+        print(f"[❌ EXECUTION FAILED] {e}")
         return False
-
-    return True
