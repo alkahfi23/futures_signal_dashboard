@@ -79,9 +79,9 @@ def enhanced_signal(df):
     score_short = sum([macd_cross_down, ema_down, rsi_bearish, bb_lower_break, vol_spike, adx_strong])
 
     if score_long >= 3:
-        return "BUY"
+        return "LONG"
     elif score_short >= 3:
-        return "SELL"
+        return "SHORT"
     return ""
 
 def load_last_trade(symbol, interval):
@@ -118,7 +118,7 @@ def margin_call_warning(account_balance, pos_size, entry, leverage):
 
 # ====== Streamlit UI ======
 st.set_page_config(page_title="Futures Signal Dashboard", layout="wide")
-st.title("\U0001F680 Futures Signal Dashboard - 1 Minute")
+st.title("🚀 Futures Signal Dashboard - 1 Minute")
 st_autorefresh(interval=REFRESH_INTERVAL * 1000, key="refresh")
 
 for symbol in SYMBOLS:
@@ -139,10 +139,10 @@ for symbol in SYMBOLS:
             continue
 
         entry = latest['close']
-        if signal == "BUY":
+        if signal == "LONG":
             sl = entry - latest['atr'] * 1.5
             tp = entry + latest['atr'] * 2.5
-        elif signal == "SELL":
+        elif signal == "SHORT":
             sl = entry + latest['atr'] * 1.5
             tp = entry - latest['atr'] * 2.5
 
@@ -164,14 +164,14 @@ for symbol in SYMBOLS:
 
         try:
             result = execute_trade(
-            symbol=symbol,
-            side=signal,
-            quantity=pos_size,
-            entry_price=entry_realtime,
-            leverage=leverage,
-            position_side=signal  # Gunakan 'LONG' atau 'SHORT'
-           )
-
+                symbol=symbol,
+                side=signal,
+                quantity=pos_size,
+                entry_price=entry_realtime,
+                leverage=leverage,
+                position_side=signal,  # Sesuaikan dengan Hedge Mode
+                risk_pct=risk_pct
+            )
             if result:
                 st.success(f"✅ Trade berhasil: {symbol} ({signal})")
                 save_last_trade(symbol, INTERVAL, signal, candle_time)
