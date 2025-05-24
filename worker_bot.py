@@ -18,9 +18,9 @@ INTERVAL = "1m"
 LIMIT = 100
 
 account_balance = 17
-risk_pct = 5
+risk_pct = 10
 leverage = 200
-MIN_QTY = 0.001
+MIN_QTY = 0.0001
 
 # Get Klines
 
