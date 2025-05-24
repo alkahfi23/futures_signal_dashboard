@@ -1,93 +1,91 @@
-import os
 import streamlit as st
-import pandas as pd
-import requests
-from ta.trend import EMAIndicator, ADXIndicator, MACD
-from ta.momentum import RSIIndicator
-from ta.volatility import BollingerBands, AverageTrueRange
-from trade import position_exists
+import time
+import os
+from binance.client import Client
+from binance.exceptions import BinanceAPIException
 
-BASE_URL = "https://api.binance.com"
-SYMBOLS = ["BTCUSDT"]
-INTERVAL = "1m"
-LIMIT = 100
-REFRESH_INTERVAL = 60
+# Inisialisasi Binance Client
+API_KEY = os.getenv("BINANCE_API_KEY")
+API_SECRET = os.getenv("BINANCE_API_SECRET")
+client = Client(API_KEY, API_SECRET)
 
-@st.cache_data(ttl=REFRESH_INTERVAL)
-def get_klines(symbol, interval, limit):
-    url = f"{BASE_URL}/api/v3/klines?symbol={symbol}&interval={interval}&limit={limit}"
+st.set_page_config("🟢 Binance Futures Status", layout="wide")
+st.title("📊 Real-Time Binance Futures Status")
+
+# Auto refresh setiap 1 menit
+st_autorefresh = st.empty()
+if st_autorefresh.button("🔁 Refresh Manual"):
+    st.experimental_rerun()
+
+st.markdown("⏱️ **Auto-refresh setiap 60 detik**")
+time.sleep(1)
+
+# Fungsi ambil saldo USDT futures
+def get_futures_balance():
     try:
-        res = requests.get(url)
-        data = res.json()
-        df = pd.DataFrame(data, columns=[
-            'open_time', 'open', 'high', 'low', 'close', 'volume',
-            'close_time', 'qav', 'num_trades', 'taker_base_vol', 'taker_quote_vol', 'ignore'
-        ])
-        df['open_time'] = pd.to_datetime(df['open_time'], unit='ms')
-        df[['open', 'high', 'low', 'close', 'volume']] = df[['open', 'high', 'low', 'close', 'volume']].astype(float)
-        return df
-    except Exception as e:
-        st.error(f"❌ Gagal ambil data {symbol}: {e}")
-        return pd.DataFrame()
+        balances = client.futures_account_balance()
+        for b in balances:
+            if b['asset'] == 'USDT':
+                return float(b['balance']), float(b['availableBalance'])
+        return 0.0, 0.0
+    except BinanceAPIException as e:
+        st.error(f"Gagal ambil saldo: {e}")
+        return 0.0, 0.0
 
-def calculate_indicators(df):
-    df['ema'] = EMAIndicator(df['close'], window=20).ema_indicator()
-    df['rsi'] = RSIIndicator(df['close'], window=14).rsi()
-    df['adx'] = ADXIndicator(df['high'], df['low'], df['close'], window=14).adx()
-    macd = MACD(df['close'])
-    df['macd'], df['macd_signal'] = macd.macd(), macd.macd_signal()
-    bb = BollingerBands(df['close'], window=20, window_dev=2)
-    df['bb_upper'], df['bb_lower'] = bb.bollinger_hband(), bb.bollinger_lband()
-    df['volume_ma20'] = df['volume'].rolling(window=20).mean()
-    df['volume_spike'] = df['volume'] > df['volume_ma20'] * 2
-    atr = AverageTrueRange(df['high'], df['low'], df['close'], window=14)
-    df['atr'] = atr.average_true_range()
-    return df
+# Fungsi ambil total unrealized PnL dan posisi berjalan
+def get_positions():
+    try:
+        positions = client.futures_account()['positions']
+        running_positions = []
+        total_upnl = 0.0
+        total_loss = 0.0
+        total_gain = 0.0
 
-def enhanced_signal(df):
-    latest, prev = df.iloc[-1], df.iloc[-2]
-    score_long = sum([
-        prev["macd"] < prev["macd_signal"] and latest["macd"] > latest["macd_signal"],
-        latest["close"] > latest["ema"],
-        latest["rsi"] > 48,
-        latest["close"] > latest["bb_upper"],
-        latest["volume_spike"],
-        latest["adx"] > 15
-    ])
-    score_short = sum([
-        prev["macd"] > prev["macd_signal"] and latest["macd"] < latest["macd_signal"],
-        latest["close"] < latest["ema"],
-        latest["rsi"] < 52,
-        latest["close"] < latest["bb_lower"],
-        latest["volume_spike"],
-        latest["adx"] > 15
-    ])
-    if score_long >= 3: return "LONG"
-    if score_short >= 3: return "SHORT"
-    return ""
+        for p in positions:
+            amt = float(p['positionAmt'])
+            upnl = float(p['unrealizedProfit'])
+            if amt != 0:
+                symbol = p['symbol']
+                entry = float(p['entryPrice'])
+                mark = float(p['markPrice'])
+                side = "LONG" if amt > 0 else "SHORT"
+                running_positions.append({
+                    'symbol': symbol,
+                    'side': side,
+                    'qty': amt,
+                    'entry': entry,
+                    'mark': mark,
+                    'pnl': upnl
+                })
+                total_upnl += upnl
+                if upnl > 0:
+                    total_gain += upnl
+                else:
+                    total_loss += abs(upnl)
 
-st.set_page_config(page_title="Futures Dashboard", layout="wide")
-st.title("📈 Binance Futures Dashboard (1-Minute Signal)")
+        return running_positions, total_upnl, total_gain, total_loss
+    except BinanceAPIException as e:
+        st.error(f"Gagal ambil posisi: {e}")
+        return [], 0.0, 0.0, 0.0
 
-for symbol in SYMBOLS:
-    df = get_klines(symbol, INTERVAL, LIMIT)
-    if df.empty or df.shape[0] < 20:
-        st.warning(f"⚠️ Data tidak cukup untuk {symbol}")
-        continue
+# Tampilkan Saldo
+balance, available = get_futures_balance()
+st.metric("💰 Futures Balance (USDT)", f"{balance:.2f} USDT")
+st.metric("🟢 Available Balance", f"{available:.2f} USDT")
 
-    df = calculate_indicators(df)
-    signal = enhanced_signal(df)
-    latest = df.iloc[-1]
+# Tampilkan Profit dan Loss
+positions, total_upnl, total_gain, total_loss = get_positions()
+st.metric("📈 Total Gain", f"{total_gain:.2f} USDT", delta=f"{total_gain:.2f}")
+st.metric("📉 Total Loss", f"{total_loss:.2f} USDT", delta=f"-{total_loss:.2f}")
+st.metric("📊 Unrealized PnL", f"{total_upnl:.2f} USDT", delta=f"{total_upnl:.2f}")
 
-    st.subheader(f"{symbol} Latest Candle")
-    st.write(latest[['open_time', 'close', 'volume', 'rsi', 'adx', 'macd', 'ema', 'atr']])
+# Tampilkan Posisi Berjalan
+st.subheader("🚀 Running Positions")
+if positions:
+    st.dataframe(positions)
+else:
+    st.info("Tidak ada posisi yang sedang berjalan.")
 
-    st.subheader(f"Current Signal: {signal if signal else 'No Signal'}")
-
-    # Contoh cek posisi via trade.py function
-    from trade import position_exists
-    has_pos_long = position_exists(symbol=symbol, side="LONG")
-    has_pos_short = position_exists(symbol=symbol, side="SHORT")
-
-    st.write(f"Position LONG open: {has_pos_long}")
-    st.write(f"Position SHORT open: {has_pos_short}")
+# Auto-refresh tiap 60 detik
+st_autorefresh.empty()
+st.experimental_rerun()
