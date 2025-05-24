@@ -16,14 +16,34 @@ BASE_URL = "https://api.binance.com"
 SYMBOLS = ["BTCUSDT"]
 INTERVAL = "1m"
 LIMIT = 100
-
-account_balance = 17
-risk_pct = 10
-leverage = 200
+LEVERAGE = 200
 MIN_QTY = 0.0001
 
-# Get Klines
+# Ambil saldo USDT dari akun Binance Futures
+def get_futures_balance(asset="USDT"):
+    balances = client.futures_account_balance()
+    for b in balances:
+        if b["asset"] == asset:
+            return float(b["balance"])
+    return 0.0
 
+# Set leverage ke nilai ideal jika belum sesuai
+def ensure_leverage(symbol, desired_leverage):
+    try:
+        client.futures_change_leverage(symbol=symbol, leverage=desired_leverage)
+    except Exception as e:
+        print(f"⚠️ Gagal set leverage: {e}")
+
+# Tentukan risk % berdasarkan saldo
+def get_dynamic_risk_pct(balance):
+    if balance < 50:
+        return 5
+    elif balance <= 500:
+        return 3
+    else:
+        return 1.5
+
+# Get Klines
 def get_klines(symbol, interval, limit):
     url = f"{BASE_URL}/api/v3/klines?symbol={symbol}&interval={interval}&limit={limit}"
     res = requests.get(url)
@@ -37,7 +57,6 @@ def get_klines(symbol, interval, limit):
     return df
 
 # Indicators
-
 def calculate_indicators(df):
     df['ema'] = EMAIndicator(df['close'], window=20).ema_indicator()
     df['rsi'] = RSIIndicator(df['close'], window=14).rsi()
@@ -53,7 +72,6 @@ def calculate_indicators(df):
     return df
 
 # Signal logic
-
 def enhanced_signal(df):
     latest, prev = df.iloc[-1], df.iloc[-2]
     score_long = sum([
@@ -77,7 +95,6 @@ def enhanced_signal(df):
     return ""
 
 # Position Size Calculation
-
 def calculate_position_size(balance, risk_pct, entry, sl, leverage):
     risk_amt = balance * (risk_pct / 100)
     sl_distance = abs(entry - sl)
@@ -86,7 +103,6 @@ def calculate_position_size(balance, risk_pct, entry, sl, leverage):
     return round(raw_size, 6)
 
 # Margin Warning
-
 def margin_warning(balance, pos_size, entry, leverage):
     margin_used = (pos_size * entry) / leverage
     if margin_used > balance:
@@ -96,7 +112,6 @@ def margin_warning(balance, pos_size, entry, leverage):
     return False, ""
 
 # Notional Check
-
 def get_symbol_filters(symbol):
     info = client.futures_exchange_info()
     for s in info['symbols']:
@@ -114,10 +129,12 @@ def is_notional_valid(symbol, qty, price):
     return notional >= min_notional
 
 # Main Loop
-
 def main_loop():
     while True:
         try:
+            balance = get_futures_balance()
+            risk_pct = get_dynamic_risk_pct(balance)
+
             for symbol in SYMBOLS:
                 df = get_klines(symbol, INTERVAL, LIMIT)
                 if df.empty or df.shape[0] < 20:
@@ -129,10 +146,12 @@ def main_loop():
                 latest = df.iloc[-1]
                 entry = latest["close"]
 
+                ensure_leverage(symbol, LEVERAGE)
+
                 if signal and not position_exists(symbol, signal):
                     sl = entry - latest['atr'] * 1.5 if signal == "LONG" else entry + latest['atr'] * 1.5
                     tp = entry + latest['atr'] * 2.5 if signal == "LONG" else entry - latest['atr'] * 2.5
-                    pos_size = calculate_position_size(account_balance, risk_pct, entry, sl, leverage)
+                    pos_size = calculate_position_size(balance, risk_pct, entry, sl, LEVERAGE)
                     pos_size = adjust_quantity(symbol, pos_size)
 
                     if pos_size < MIN_QTY:
@@ -143,7 +162,7 @@ def main_loop():
                         print(f"⛔ Notional terlalu kecil: {pos_size * entry:.2f} < min")
                         continue
 
-                    is_margin_risk, note = margin_warning(account_balance, pos_size, entry, leverage)
+                    is_margin_risk, note = margin_warning(balance, pos_size, entry, LEVERAGE)
                     if is_margin_risk:
                         print(note)
                         continue
@@ -155,7 +174,7 @@ def main_loop():
                         side=signal,
                         quantity=pos_size,
                         entry_price=entry,
-                        leverage=leverage,
+                        leverage=LEVERAGE,
                         position_side=signal,
                         sl_price=sl,
                         tp_price=tp,
@@ -173,7 +192,7 @@ def main_loop():
 
         except Exception as e:
             print(f"[ERROR MAIN LOOP] {e}")
-            time.sleep(10)
+            time.sleep(30)
 
 if __name__ == "__main__":
     main_loop()
