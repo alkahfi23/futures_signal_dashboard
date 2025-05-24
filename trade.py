@@ -1,142 +1,124 @@
-from binance.client import Client
-from binance.exceptions import BinanceAPIException
+# trade.py
+
 import os
+from binance.client import Client
+from binance.enums import *
+from binance.exceptions import BinanceAPIException
+from utils import get_symbol_filters, get_position_info
+from notifikasi import kirim_notifikasi_order, kirim_notifikasi_penutupan
 
-# Inisialisasi Client Binance Futures
 client = Client(os.getenv("BINANCE_API_KEY"), os.getenv("BINANCE_API_SECRET"))
-client.FUTURES_URL = 'https://fapi.binance.com/fapi'
 
-def get_quantity_precision(symbol: str) -> int:
-    """Dapatkan precision quantity untuk simbol tertentu."""
+def position_exists(symbol, side):
     try:
-        info = client.futures_exchange_info()
-        for s in info['symbols']:
-            if s['symbol'] == symbol:
-                for f in s['filters']:
-                    if f['filterType'] == 'LOT_SIZE':
-                        step_size = float(f['stepSize'])
-                        precision = 0
-                        while round(step_size * (10 ** precision)) != step_size * (10 ** precision):
-                            precision += 1
-                        return precision
-        return 3
-    except Exception:
-        return 3
-
-def adjust_quantity(symbol: str, quantity: float) -> float:
-    """Sesuaikan quantity sesuai precision simbol."""
-    precision = get_quantity_precision(symbol)
-    return round(quantity, precision)
-
-def position_exists(symbol: str, side: str) -> bool:
-    """Cek apakah posisi LONG atau SHORT sudah terbuka di symbol tertentu."""
-    try:
-        positions = client.futures_position_information(symbol=symbol)
-        for p in positions:
-            pos_amt = float(p['positionAmt'])
-            if (side == "LONG" and pos_amt > 0) or (side == "SHORT" and pos_amt < 0):
+        pos = client.futures_position_information(symbol=symbol)
+        for p in pos:
+            amt = float(p['positionAmt'])
+            if (side == "LONG" and amt > 0) or (side == "SHORT" and amt < 0):
                 return True
         return False
-    except Exception as e:
-        print(f"[❌ POSITION CHECK ERROR] {e}")
+    except BinanceAPIException as e:
+        print(f"[ERROR] position_exists: {e}")
         return False
 
-def close_opposite_position(symbol: str, side: str):
-    """Tutup posisi lawan sebelum open posisi baru."""
+def close_opposite_position(symbol, side):
     try:
-        opposite_side = "SHORT" if side == "LONG" else "LONG"
-        positions = client.futures_position_information(symbol=symbol)
-        for p in positions:
-            pos_amt = float(p['positionAmt'])
-            if (opposite_side == "LONG" and pos_amt > 0) or (opposite_side == "SHORT" and pos_amt < 0):
-                quantity = abs(pos_amt)
-                quantity = adjust_quantity(symbol, quantity)
-                order_side = "SELL" if opposite_side == "LONG" else "BUY"
+        pos = client.futures_position_information(symbol=symbol)
+        for p in pos:
+            amt = float(p['positionAmt'])
+            if (side == "LONG" and amt < 0) or (side == "SHORT" and amt > 0):
+                close_side = SIDE_BUY if amt < 0 else SIDE_SELL
+                qty = abs(amt)
+                mark_price = float(p['markPrice'])
+                pnl = float(p['unrealizedProfit'])
+                entry_price = float(p['entryPrice'])
+
                 client.futures_create_order(
                     symbol=symbol,
-                    side=order_side,
-                    type='MARKET',
-                    quantity=quantity,
+                    side=close_side,
+                    type=FUTURE_ORDER_TYPE_MARKET,
+                    quantity=qty,
                     reduceOnly=True
                 )
-                print(f"🔄 Closed opposite {opposite_side} position for {symbol}, qty: {quantity}")
-    except BinanceAPIException as e:
-        print(f"[❌ CLOSE OPPOSITE POSITION ERROR] {e}")
 
-def execute_trade(symbol: str, side: str, quantity: float, entry_price: float, leverage: int,
-                  position_side="BOTH", sl_price=None, tp_price=None, trailing_stop_callback_rate=None):
-    """
-    Eksekusi order market dengan SL, TP, dan trailing stop (opsional).
-    position_side: "BOTH", "LONG", atau "SHORT"
-    """
+                percentage = (pnl / (abs(qty) * entry_price)) * 100 if entry_price > 0 else 0
+                kirim_notifikasi_penutupan(symbol, pnl, percentage)
+
+                print(f"[CLOSED] {symbol} {side} Posisi ditutup.")
+    except BinanceAPIException as e:
+        print(f"[ERROR] close_opposite_position: {e}")
+
+def adjust_quantity(symbol, qty):
     try:
-        # 🔄 Tutup posisi lawan sebelum entry
-        close_opposite_position(symbol, side)
+        filters = get_symbol_filters(symbol)
+        step_size = float(filters['LOT_SIZE']['stepSize'])
+        precision = str(step_size)[::-1].find('1')
+        return round(qty, precision)
+    except Exception as e:
+        print(f"[ERROR] adjust_quantity: {e}")
+        return qty
 
-        # Set leverage
+def set_leverage(symbol, leverage):
+    try:
         client.futures_change_leverage(symbol=symbol, leverage=leverage)
+        print(f"✅ Leverage {symbol} di-set ke {leverage}")
+    except BinanceAPIException as e:
+        print(f"[ERROR] set_leverage: {e}")
 
-        order_side = "BUY" if side == "LONG" else "SELL"
-        opposite_side = "SELL" if side == "LONG" else "BUY"
+def execute_trade(symbol, side, quantity, entry_price, leverage, position_side, sl_price, tp_price, trailing_stop_callback_rate=1.0):
+    try:
+        set_leverage(symbol, leverage)
 
-        # Sesuaikan quantity sesuai precision
-        quantity = adjust_quantity(symbol, quantity)
+        order_side = SIDE_BUY if side == "LONG" else SIDE_SELL
+        client.futures_create_order(
+            symbol=symbol,
+            side=order_side,
+            type=FUTURE_ORDER_TYPE_MARKET,
+            quantity=quantity,
+            newClientOrderId=f"{symbol}_{side}_entry"
+        )
 
-        # Open posisi market
-        order_params = {
-            'symbol': symbol,
-            'side': order_side,
-            'type': 'MARKET',
-            'quantity': quantity
-        }
-        if position_side != "BOTH":
-            order_params['positionSide'] = "LONG" if side == "LONG" else "SHORT"
+        # Set TP/SL via reduce-only orders
+        close_side = SIDE_SELL if side == "LONG" else SIDE_BUY
 
-        order = client.futures_create_order(**order_params)
+        client.futures_create_order(
+            symbol=symbol,
+            side=close_side,
+            type=FUTURE_ORDER_TYPE_STOP_MARKET,
+            stopPrice=round(sl_price, 2),
+            closePosition=True,
+            timeInForce=TIME_IN_FORCE_GTC,
+            reduceOnly=True,
+            newClientOrderId=f"{symbol}_{side}_sl"
+        )
 
-        # Pasang SL jika ada
-        if sl_price is not None:
-            sl_params = {
-                'symbol': symbol,
-                'side': opposite_side,
-                'type': 'STOP_MARKET',
-                'stopPrice': round(sl_price, 2),
-                'closePosition': True,
-                'timeInForce': 'GTC'
-            }
-            if position_side != "BOTH":
-                sl_params['positionSide'] = "LONG" if side == "LONG" else "SHORT"
-            client.futures_create_order(**sl_params)
+        client.futures_create_order(
+            symbol=symbol,
+            side=close_side,
+            type=FUTURE_ORDER_TYPE_TAKE_PROFIT_MARKET,
+            stopPrice=round(tp_price, 2),
+            closePosition=True,
+            timeInForce=TIME_IN_FORCE_GTC,
+            reduceOnly=True,
+            newClientOrderId=f"{symbol}_{side}_tp"
+        )
 
-        # Pasang TP jika ada
-        if tp_price is not None:
-            tp_params = {
-                'symbol': symbol,
-                'side': opposite_side,
-                'type': 'TAKE_PROFIT_MARKET',
-                'stopPrice': round(tp_price, 2),
-                'closePosition': True,
-                'timeInForce': 'GTC'
-            }
-            if position_side != "BOTH":
-                tp_params['positionSide'] = "LONG" if side == "LONG" else "SHORT"
-            client.futures_create_order(**tp_params)
+        # Optional: trailing stop
+        if trailing_stop_callback_rate:
+            client.futures_create_order(
+                symbol=symbol,
+                side=close_side,
+                type="TRAILING_STOP_MARKET",
+                callbackRate=trailing_stop_callback_rate,
+                activationPrice=round(entry_price * (1.01 if side == "LONG" else 0.99), 2),
+                quantity=quantity,
+                reduceOnly=True,
+                newClientOrderId=f"{symbol}_{side}_trail"
+            )
 
-        # Pasang Trailing Stop jika ada
-        if trailing_stop_callback_rate is not None:
-            ts_params = {
-                'symbol': symbol,
-                'side': opposite_side,
-                'type': 'TRAILING_STOP_MARKET',
-                'callbackRate': trailing_stop_callback_rate,
-                'reduceOnly': True
-            }
-            if position_side != "BOTH":
-                ts_params['positionSide'] = "LONG" if side == "LONG" else "SHORT"
-            client.futures_create_order(**ts_params)
-
-        return order
+        kirim_notifikasi_order(symbol, side, leverage, quantity)
+        return True
 
     except BinanceAPIException as e:
-        print(f"[❌ EXECUTION FAILED] {e}")
-        return None
+        print(f"[ERROR] execute_trade: {e}")
+        return False
