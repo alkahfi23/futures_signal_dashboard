@@ -1,24 +1,20 @@
 import streamlit as st
-import time
 import os
 from binance.client import Client
 from binance.exceptions import BinanceAPIException
+from streamlit_autorefresh import st_autorefresh
+
+# Konfigurasi halaman
+st.set_page_config("🟢 Binance Futures Status", layout="wide")
+st.title("📊 Real-Time Binance Futures Status")
 
 # Inisialisasi Binance Client
 API_KEY = os.getenv("BINANCE_API_KEY")
 API_SECRET = os.getenv("BINANCE_API_SECRET")
 client = Client(API_KEY, API_SECRET)
 
-st.set_page_config("🟢 Binance Futures Status", layout="wide")
-st.title("📊 Real-Time Binance Futures Status")
-
-# Auto refresh setiap 1 menit
-st_autorefresh = st.empty()
-if st_autorefresh.button("🔁 Refresh Manual"):
-    st.experimental_rerun()
-
-st.markdown("⏱️ **Auto-refresh setiap 60 detik**")
-time.sleep(1)
+# Auto refresh setiap 60 detik (60000 ms)
+st_autorefresh(interval=60000, key="refresh_binance")
 
 # Fungsi ambil saldo USDT futures
 def get_futures_balance():
@@ -75,9 +71,9 @@ st.metric("🟢 Available Balance", f"{available:.2f} USDT")
 
 # Tampilkan Profit dan Loss
 positions, total_upnl, total_gain, total_loss = get_positions()
-st.metric("📈 Total Gain", f"{total_gain:.2f} USDT", delta=f"{total_gain:.2f}")
-st.metric("📉 Total Loss", f"{total_loss:.2f} USDT", delta=f"-{total_loss:.2f}")
-st.metric("📊 Unrealized PnL", f"{total_upnl:.2f} USDT", delta=f"{total_upnl:.2f}")
+st.metric("📈 Total Gain", f"{total_gain:.2f} USDT")
+st.metric("📉 Total Loss", f"{total_loss:.2f} USDT")
+st.metric("📊 Unrealized PnL", f"{total_upnl:.2f} USDT")
 
 # Tampilkan Posisi Berjalan
 st.subheader("🚀 Running Positions")
@@ -85,7 +81,3 @@ if positions:
     st.dataframe(positions)
 else:
     st.info("Tidak ada posisi yang sedang berjalan.")
-
-# Auto-refresh tiap 60 detik
-st_autorefresh.empty()
-st.experimental_rerun()
